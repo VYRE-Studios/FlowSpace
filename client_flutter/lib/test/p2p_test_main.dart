@@ -1,0 +1,45 @@
+import 'package:client_flutter/services/p2p/p2p_manager.dart';
+import 'p2p_test_harness.dart';
+
+/// Simple console application for testing P2P functionality
+/// 
+/// Run this on both desktop and laptop to verify Phase 1 P2P messaging.
+/// 
+/// To run:
+/// ```bash
+/// cd C:\FlowSpace\client_flutter
+/// dart run lib/test/p2p_test_main.dart
+/// ```
+void main() async {
+  print('Starting FLO P2P Test Application...');
+  print('');
+
+  final manager = P2PManager();
+  final test = P2PTestHarness(manager);
+
+  try {
+    await test.start();
+
+    // Run automated tests after initialization
+    await Future.delayed(Duration(seconds: 2));
+    
+    print('Starting automated tests in 3 seconds...');
+    print('(Make sure another instance is running on a different device)');
+    print('');
+    
+    await Future.delayed(Duration(seconds: 3));
+    await test.runAutomatedTests();
+
+    // Keep running to receive messages
+    print('Continuing to listen for messages...');
+    print('Press Ctrl+C to exit');
+    
+    // Keep alive
+    await Future.delayed(Duration(minutes: 60));
+  } catch (e, stack) {
+    print('Error during P2P test: $e');
+    print(stack);
+  } finally {
+    manager.dispose();
+  }
+}

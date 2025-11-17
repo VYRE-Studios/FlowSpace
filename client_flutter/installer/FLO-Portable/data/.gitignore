@@ -1,0 +1,5 @@
+# Ignore all data (user-specific)
+*
+
+# But keep the directory structure
+!.gitignore

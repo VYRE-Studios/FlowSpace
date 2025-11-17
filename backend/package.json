@@ -1,0 +1,57 @@
+{
+    "name": "backend",
+    "version": "1.0.0",
+    "description": "",
+    "main": "index.js",
+    "bin": "dist/src/main.js",
+    "scripts": {
+        "prestart:dev": "node -e \"require('child_process').exec('npx prisma generate', (err) => { if (err) console.log('Prisma generate skipped (files locked, will retry on startup)'); process.exit(0); });\"",
+        "start:dev": "nodemon --exec ts-node src/main.ts",
+        "test": "jest",
+        "build": "tsc",
+        "start": "ts-node -r tsconfig-paths/register src/main.ts",
+        "stop": "pwsh -File stop-backend.ps1",
+        "stop-port": "pwsh -File stop-port-4000.ps1"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "type": "commonjs",
+    "prisma": {
+        "seed": "ts-node ./prisma/seed.ts"
+    },
+    "dependencies": {
+        "@aws-sdk/client-s3": "^3.928.0",
+        "@nestjs/common": "^11.1.8",
+        "@nestjs/config": "^4.0.2",
+        "@nestjs/core": "^11.1.8",
+        "@nestjs/platform-express": "^11.1.8",
+        "@nestjs/platform-socket.io": "^11.1.8",
+        "@nestjs/typeorm": "^11.0.0",
+        "@nestjs/websockets": "^11.1.8",
+        "@prisma/client": "^6.19.0",
+        "axios": "^1.13.2",
+        "bcrypt": "^6.0.0",
+        "class-transformer": "^0.5.1",
+        "class-validator": "^0.14.2",
+        "ioredis": "^5.8.2",
+        "jsonwebtoken": "^9.0.2",
+        "pg": "^8.16.3",
+        "prisma": "^6.19.0",
+        "redis": "^5.9.0",
+        "reflect-metadata": "^0.2.2",
+        "rxjs": "^7.8.2",
+        "typeorm": "^0.3.27"
+    },
+    "devDependencies": {
+        "@types/bcrypt": "^6.0.0",
+        "@types/jsonwebtoken": "^9.0.10",
+        "@types/multer": "^2.0.0",
+        "@types/node": "^24.10.0",
+        "nodemon": "^3.1.11",
+        "ts-node": "^10.9.2",
+        "ts-node-dev": "^2.0.0",
+        "tsconfig-paths": "^4.2.0",
+        "typescript": "^5.9.3"
+    }
+}

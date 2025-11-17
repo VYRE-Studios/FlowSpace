@@ -1,0 +1,186 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                   String            @id @default(uuid())
+  email                String            @unique
+  passwordHash         String
+  displayName          String?
+  createdAt            DateTime          @default(now())
+  workspaceMemberships WorkspaceMember[]
+  ownedWorkspaces      Workspace[]       @relation("WorkspaceOwner")
+  messages             ChatMessage[]
+  files                VaultFile[]
+}
+
+model Workspace {
+  id          String            @id @default(uuid())
+  slug        String            @unique
+  name        String
+  description String?
+  ownerId     String
+  owner       User              @relation("WorkspaceOwner", fields: [ownerId], references: [id])
+  members     WorkspaceMember[]
+  channels    Channel[]
+  files       VaultFile[]
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+}
+
+model WorkspaceMember {
+  id          String        @id @default(uuid())
+  workspaceId String
+  userId      String
+  role        WorkspaceRole @default(MEMBER)
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime      @default(now())
+
+  @@unique([workspaceId, userId])
+}
+
+enum WorkspaceRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+model Channel {
+  id          String        @id @default(uuid())
+  workspaceId String
+  name        String
+  description String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  messages    ChatMessage[]
+}
+
+model ChatMessage {
+  id          String        @id @default(uuid())
+  channelId   String
+  senderId    String
+  content     String
+  attachments String[]      @default([])
+  parentId    String?
+  createdAt   DateTime      @default(now())
+  channel     Channel       @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  sender      User          @relation(fields: [senderId], references: [id])
+  parent      ChatMessage?  @relation("MessageThread", fields: [parentId], references: [id], onDelete: Cascade)
+  replies     ChatMessage[] @relation("MessageThread")
+
+  @@index([parentId])
+  @@index([channelId, createdAt])
+}
+
+model VaultFile {
+  id          String    @id @default(uuid())
+  workspaceId String
+  uploaderId  String
+  name        String
+  url         String
+  size        Int
+  contentType String?
+  createdAt   DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  uploader    User      @relation(fields: [uploaderId], references: [id])
+}
+
+model PresenceSnapshot {
+  id            String   @id @default(uuid())
+  workspaceId   String
+  userId        String
+  status        String
+  lastHeartbeat DateTime @default(now())
+
+  @@unique([workspaceId, userId])
+}
+
+model Meeting {
+  id           String               @id @default(uuid())
+  workspaceId  String
+  title        String
+  roomId       String               @unique
+  status       MeetingStatus        @default(SCHEDULED)
+  startedAt    DateTime?
+  endedAt      DateTime?
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+  participants MeetingParticipant[]
+}
+
+model MeetingParticipant {
+  id        String    @id @default(uuid())
+  meetingId String
+  userId    String
+  joinedAt  DateTime  @default(now())
+  leftAt    DateTime?
+  meeting   Meeting   @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@unique([meetingId, userId])
+}
+
+enum MeetingStatus {
+  SCHEDULED
+  ACTIVE
+  ENDED
+  CANCELLED
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  workspaceId String
+  userId      String
+  action      String
+  entityType  String?
+  entityId    String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([workspaceId, createdAt])
+  @@index([userId, createdAt])
+}
+
+// P2P Network Models
+model Peer {
+  id         String   @id
+  pubkey     String   @unique
+  lastSeen   DateTime @default(now())
+  address    String?
+  deviceInfo String?
+  trustLevel Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([lastSeen])
+}
+
+model OutgoingMessage {
+  id         String    @id @default(uuid())
+  toPeer     String
+  ciphertext String
+  timestamp  DateTime  @default(now())
+  delivered  Boolean   @default(false)
+  retryCount Int       @default(0)
+  nextRetry  DateTime?
+
+  @@index([toPeer, delivered])
+  @@index([nextRetry])
+}
+
+model IncomingMessage {
+  id         String   @id @default(uuid())
+  fromPeer   String
+  ciphertext String
+  timestamp  DateTime @default(now())
+  processed  Boolean  @default(false)
+
+  @@index([fromPeer, processed])
+  @@index([timestamp])
+}

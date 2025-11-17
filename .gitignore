@@ -1,0 +1,77 @@
+# Service logs
+logs/
+*.log
+backend-startup.log
+backend-test.log
+flutter_debug.log
+
+# Node
+node_modules/
+dist/
+.env
+.env.local
+.env.*.local
+
+# Flutter
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
+*.iml
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Prisma
+prisma/migrations/.migration_lock
+backend/prisma/migrations/
+
+# Build artifacts
+releases/
+*.zip
+*.exe
+!installer/*.exe
+!service-wrappers/*.exe
+
+# Temp
+tmp/
+temp/
+*.tmp
+
+# User data
+FlowSpaceApp/
+FlowSpace-USB-Installer/
+
+# Screenshots
+*.png
+!assets/**/*.png
+!docs/**/*.png
+
+# Installer builds (keep scripts, ignore outputs)
+installer/*.exe
+installer/FLO-Portable/
+installer/deps/
+
+# Backend builds
+backend/dist/
+backend/build/
+backend/startup.log
+
+# Test outputs
+test-results/
+coverage/

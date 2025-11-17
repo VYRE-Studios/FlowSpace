@@ -1,0 +1,518 @@
+import 'dart:ui';
+import 'package:flutter/material.dart';
+import '../../services/database_service.dart';
+import '../../services/workspace_service.dart';
+
+class WorkspaceSettingsView extends StatefulWidget {
+  final String? workspaceName;
+  
+  const WorkspaceSettingsView({super.key, this.workspaceName});
+
+  @override
+  State<WorkspaceSettingsView> createState() => _WorkspaceSettingsViewState();
+}
+
+class _WorkspaceSettingsViewState extends State<WorkspaceSettingsView> {
+  bool _loading = true;
+  Map<String, dynamic>? _workspace;
+  List<Map<String, dynamic>> _members = [];
+  List<Map<String, dynamic>> _channels = [];
+  String _tier = 'free';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadWorkspaceData();
+  }
+
+  bool _hasLoaded = false;
+  String? _lastWorkspaceName;
+
+  @override
+  void didUpdateWidget(WorkspaceSettingsView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Reload when workspace name changes
+    if (widget.workspaceName != oldWidget.workspaceName) {
+      _lastWorkspaceName = widget.workspaceName;
+      _hasLoaded = false;
+      _loadWorkspaceData();
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Reload data when view becomes visible for the first time
+    if (!_hasLoaded && !_loading) {
+      _lastWorkspaceName = widget.workspaceName;
+      _loadWorkspaceData();
+    }
+  }
+
+  Future<void> _loadWorkspaceData() async {
+    if (!mounted) return;
+    setState(() => _loading = true);
+    
+    try {
+      final user = await DatabaseService.getCurrentUser();
+      if (user == null) {
+        if (!mounted) return;
+        setState(() => _loading = false);
+        return;
+      }
+      
+      Map<String, dynamic>? workspace;
+      
+      // If workspace name is provided and not the default, use that to find the workspace
+      if (widget.workspaceName != null && 
+          widget.workspaceName!.isNotEmpty && 
+          widget.workspaceName != 'FlowSpace') {
+        try {
+          workspace = await WorkspaceService.selectWorkspaceByName(widget.workspaceName!);
+        } catch (e) {
+          print('WorkspaceSettings: Error finding workspace by name "${widget.workspaceName}": $e');
+          // Fall through to get first available workspace
+        }
+      }
+      
+      // If not found or not provided, get all workspaces and pick the most recent
+      if (workspace == null) {
+        try {
+          final workspaces = await DatabaseService.getUserWorkspaces(user['id'] as String);
+          if (workspaces.isEmpty) {
+            if (!mounted) return;
+            setState(() => _loading = false);
+            return;
+          }
+          
+          // Get the most recently updated workspace, or first one if none updated
+          workspace = workspaces.reduce((a, b) {
+            final aUpdated = DateTime.tryParse(a['updated_at'] as String? ?? '') ?? DateTime(1970);
+            final bUpdated = DateTime.tryParse(b['updated_at'] as String? ?? '') ?? DateTime(1970);
+            return bUpdated.isAfter(aUpdated) ? b : a;
+          });
+        } catch (e) {
+          print('WorkspaceSettings: Error loading workspaces: $e');
+          if (!mounted) return;
+          setState(() => _loading = false);
+          return;
+        }
+      }
+      
+      if (workspace == null) {
+        if (!mounted) return;
+        setState(() => _loading = false);
+        return;
+      }
+      
+      final workspaceId = workspace['id'] as String?;
+      if (workspaceId == null || workspaceId.isEmpty) {
+        if (!mounted) return;
+        setState(() => _loading = false);
+        return;
+      }
+      
+      final members = await DatabaseService.getWorkspaceMembers(workspaceId);
+      final channels = await DatabaseService.getWorkspaceChannels(workspaceId);
+      
+      if (!mounted) return;
+      setState(() {
+        _workspace = workspace;
+        _members = members;
+        _channels = channels;
+        _tier = workspace?['subscription_tier'] as String? ?? 'free';
+        _loading = false;
+        _hasLoaded = true;
+      });
+    } catch (e, stackTrace) {
+      print('WorkspaceSettings: Error loading data: $e');
+      print('WorkspaceSettings: Stack trace: $stackTrace');
+      if (!mounted) return;
+      setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_workspace == null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Text(
+              'No workspace found',
+              style: TextStyle(color: Colors.white70),
+            ),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: _loadWorkspaceData,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Refresh'),
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF0066FF),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _loadWorkspaceData,
+      color: const Color(0xFF0066FF),
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildTierBanner(),
+            const SizedBox(height: 32),
+            _buildWorkspaceInfo(),
+            const SizedBox(height: 32),
+            _buildMembersList(),
+            const SizedBox(height: 32),
+            _buildChannelsList(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTierBanner() {
+    final isFree = _tier == 'free';
+    
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.06),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                isFree ? Icons.rocket_outlined : Icons.workspace_premium,
+                color: const Color(0xFF0066FF),
+                size: 48,
+              ),
+              const SizedBox(width: 24),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isFree ? 'FlowSpace Free' : 'FlowSpace Pro',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 24,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      isFree
+                          ? '1 workspace • 2 channels • 5GB storage • Up to 5 members'
+                          : 'Unlimited workspaces • Unlimited channels • 100GB storage • Unlimited members',
+                      style: const TextStyle(color: Colors.white70),
+                    ),
+                  ],
+                ),
+              ),
+              if (isFree)
+                FilledButton.icon(
+                  onPressed: _showUpgradeDialog,
+                  icon: const Icon(Icons.arrow_upward),
+                  label: const Text('Upgrade to Pro'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF0066FF),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWorkspaceInfo() {
+    return _buildSection(
+      title: 'Workspace Settings',
+      children: [
+        _buildInfoRow('Name', _workspace!['name'] ?? 'Unnamed'),
+        _buildInfoRow('Slug', _workspace!['slug'] ?? ''),
+        _buildInfoRow('Created', _formatDate(_workspace!['created_at'] as String?)),
+        const SizedBox(height: 16),
+        OutlinedButton.icon(
+          onPressed: _showRenameDialog,
+          icon: const Icon(Icons.edit),
+          label: const Text('Rename Workspace'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: const Color(0xFF0066FF),
+            side: const BorderSide(color: Color(0xFF0066FF)),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMembersList() {
+    return _buildSection(
+      title: 'Team Members (${_members.length}/5)',
+      children: [
+        ..._members.map((member) {
+          return ListTile(
+            leading: CircleAvatar(
+              backgroundColor: const Color(0xFF0066FF).withValues(alpha: 0.2),
+              child: Text(
+                (member['name'] as String? ?? 'U')[0].toUpperCase(),
+                style: const TextStyle(color: Color(0xFF0066FF)),
+              ),
+            ),
+            title: Text(
+              member['name'] as String? ?? 'Unknown',
+              style: const TextStyle(color: Colors.white),
+            ),
+            subtitle: Text(
+              member['email'] as String? ?? '',
+              style: const TextStyle(color: Colors.white54),
+            ),
+            trailing: Chip(
+              label: Text(
+                (member['role'] as String? ?? 'member').toUpperCase(),
+                style: const TextStyle(fontSize: 10),
+              ),
+              backgroundColor: const Color(0xFF0066FF).withValues(alpha: 0.2),
+              labelStyle: const TextStyle(color: Color(0xFF0066FF)),
+            ),
+          );
+        }),
+        const SizedBox(height: 16),
+        OutlinedButton.icon(
+          onPressed: _tier == 'free' && _members.length >= 5 ? null : null, // TODO: implement invite
+          icon: const Icon(Icons.person_add),
+          label: const Text('Invite Member'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: const Color(0xFF0066FF),
+            side: const BorderSide(color: Color(0xFF0066FF)),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildChannelsList() {
+    return _buildSection(
+      title: 'Channels (${_channels.length}/2)',
+      children: [
+        ..._channels.map((channel) {
+          return ListTile(
+            leading: const Icon(Icons.tag, color: Color(0xFF0066FF)),
+            title: Text(
+              '# ${channel['name']}',
+              style: const TextStyle(color: Colors.white),
+            ),
+            subtitle: Text(
+              channel['description'] as String? ?? '',
+              style: const TextStyle(color: Colors.white54),
+            ),
+          );
+        }),
+        const SizedBox(height: 16),
+        OutlinedButton.icon(
+          onPressed: _tier == 'free' && _channels.length >= 2 ? null : null, // TODO: implement add channel
+          icon: const Icon(Icons.add),
+          label: const Text('Add Channel'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: const Color(0xFF0066FF),
+            side: const BorderSide(color: Color(0xFF0066FF)),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSection({required String title, required List<Widget> children}) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.04),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 16),
+              ...children,
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 100,
+            child: Text(
+              label,
+              style: const TextStyle(color: Colors.white54),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatDate(String? iso) {
+    if (iso == null) return '';
+    final date = DateTime.tryParse(iso);
+    if (date == null) return '';
+    return '${date.month}/${date.day}/${date.year}';
+  }
+
+  void _showUpgradeDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E1E),
+        title: const Text(
+          'Upgrade to Pro',
+          style: TextStyle(color: Colors.white),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'FlowSpace Pro - \$9/user/month',
+              style: TextStyle(color: Color(0xFF0066FF), fontSize: 18, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 16),
+            ...[
+              'Unlimited workspaces',
+              'Unlimited channels',
+              '100GB storage per workspace',
+              'Project management & Kanban boards',
+              'Calendar & scheduling',
+              'Screen recording',
+              'API access',
+              'Cloud sync backup (optional)',
+            ].map((feature) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                children: [
+                  const Icon(Icons.check_circle, color: Color(0xFF0066FF), size: 20),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      feature,
+                      style: const TextStyle(color: Colors.white70),
+                    ),
+                  ),
+                ],
+              ),
+            )),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(context);
+              // TODO: implement upgrade flow
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Upgrade flow coming soon!')),
+              );
+            },
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF0066FF),
+            ),
+            child: const Text('Upgrade Now'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showRenameDialog() {
+    final controller = TextEditingController(text: _workspace!['name'] as String?);
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E1E),
+        title: const Text(
+          'Rename Workspace',
+          style: TextStyle(color: Colors.white),
+        ),
+        content: TextField(
+          controller: controller,
+          style: const TextStyle(color: Colors.white),
+          decoration: const InputDecoration(
+            labelText: 'Workspace Name',
+            labelStyle: TextStyle(color: Colors.white70),
+            enabledBorder: UnderlineInputBorder(
+              borderSide: BorderSide(color: Colors.white54),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(context);
+              // TODO: implement rename
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Rename feature coming soon!')),
+              );
+            },
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF0066FF),
+            ),
+            child: const Text('Rename'),
+          ),
+        ],
+      ),
+    );
+  }
+}

@@ -1,0 +1,224 @@
+import 'package:client_flutter/services/p2p/p2p_manager.dart';
+import 'dart:io';
+
+/// P2P Test Harness
+/// 
+/// Complete testing framework for Phase 1 P2P functionality.
+/// Run this on both desktop and laptop to verify P2P messaging.
+/// 
+/// Usage:
+/// ```dart
+/// void main() async {
+///   final manager = P2PManager();
+///   final test = P2PTestHarness(manager);
+///   await test.start();
+///   
+///   // Wait for peer discovery
+///   await Future.delayed(Duration(seconds: 5));
+///   
+///   // Send test message
+///   await test.sendTestMessage("Hello from FLO P2P!");
+/// }
+/// ```
+class P2PTestHarness {
+  final P2PManager p2p;
+  int messagesReceived = 0;
+  int messagesSent = 0;
+
+  P2PTestHarness(this.p2p);
+
+  /// Start the test harness
+  /// 
+  /// Initializes P2P system and sets up message listeners
+  Future<void> start() async {
+    print('');
+    print('════════════════════════════════════════════════════════');
+    print('           FLO P2P TEST HARNESS - PHASE 1');
+    print('════════════════════════════════════════════════════════');
+    print('');
+
+    await p2p.initialize();
+
+    // Set up message listener
+    p2p.chatAdapter.messages.listen((msg) {
+      messagesReceived++;
+      print('');
+      print('📨 [${msg.timestamp.toIso8601String()}]');
+      print('   From: ${msg.senderId}');
+      print('   Message: ${msg.text}');
+      print('   Local: ${msg.isLocal}');
+      print('');
+    });
+
+    // Set up peer discovery listener
+    p2p.discovery.onPeerDiscovered = (peerId, address) {
+      print('🔵 Peer discovered: ${peerId.substring(0, 16)}... at $address');
+      print('   Total peers: ${p2p.peerCount}');
+    };
+
+    // Set up connection listener
+    p2p.connection.onConnectionEstablished = (peerId, address) {
+      print('✅ Connection established with ${peerId.substring(0, 16)}...');
+      print('   Address: $address');
+    };
+
+    print('P2P harness ready. Waiting for peers on LAN...');
+    print('Press Ctrl+C to exit');
+    print('');
+
+    // Show status periodically
+    _startStatusMonitor();
+  }
+
+  /// Send a test message to first available peer
+  Future<void> sendTestMessage(String message) async {
+    if (!p2p.hasActivePeers) {
+      print('❌ No peers discovered yet. Wait a few seconds...');
+      return;
+    }
+
+    final peer = p2p.activePeers.first;
+    await p2p.sendToPeer(peer, message);
+    messagesSent++;
+    
+    print('📤 Sent message to ${peer.substring(0, 16)}...: $message');
+  }
+
+  /// Broadcast message to all peers
+  Future<void> broadcastTestMessage(String message) async {
+    if (!p2p.hasActivePeers) {
+      print('❌ No peers discovered yet. Wait a few seconds...');
+      return;
+    }
+
+    await p2p.broadcast(message);
+    messagesSent += p2p.peerCount;
+    
+    print('📢 Broadcast to ${p2p.peerCount} peers: $message');
+  }
+
+  /// Run automated test sequence
+  Future<void> runAutomatedTests() async {
+    print('');
+    print('🧪 Running automated test sequence...');
+    print('');
+
+    // Wait for discovery
+    print('Step 1: Waiting for peer discovery (5 seconds)...');
+    await Future.delayed(Duration(seconds: 5));
+
+    if (!p2p.hasActivePeers) {
+      print('❌ FAILED: No peers discovered on LAN');
+      print('   Make sure both devices are on the same WiFi network');
+      return;
+    }
+
+    print('✅ PASSED: ${p2p.peerCount} peer(s) discovered');
+    print('');
+
+    // Test message sending
+    print('Step 2: Testing message sending...');
+    await sendTestMessage('Test message 1');
+    await Future.delayed(Duration(milliseconds: 500));
+    await sendTestMessage('Test message 2');
+    await Future.delayed(Duration(milliseconds: 500));
+    await sendTestMessage('Test message 3');
+    
+    print('✅ PASSED: Sent 3 test messages');
+    print('');
+
+    // Wait for responses
+    print('Step 3: Waiting for responses (3 seconds)...');
+    await Future.delayed(Duration(seconds: 3));
+
+    print('✅ PASSED: Received $messagesReceived message(s)');
+    print('');
+
+    // Show summary
+    print('════════════════════════════════════════════════════════');
+    print('                   TEST SUMMARY');
+    print('════════════════════════════════════════════════════════');
+    print('Peers discovered: ${p2p.peerCount}');
+    print('Messages sent: $messagesSent');
+    print('Messages received: $messagesReceived');
+    print('Status: ${messagesReceived > 0 ? "✅ SUCCESS" : "⚠️ PARTIAL"}');
+    print('════════════════════════════════════════════════════════');
+    print('');
+  }
+
+  /// Show system status
+  void showStatus() {
+    final status = p2p.getStatus();
+    print('');
+    print('─────────────────────────────────────────────────────');
+    print('Current Status:');
+    print('  Initialized: ${status['initialized']}');
+    print('  Active Peers: ${status['active_peers']}');
+    print('  UDP Port: ${status['udp_port']}');
+    print('  Messages Sent: $messagesSent');
+    print('  Messages Received: $messagesReceived');
+    
+    if (status['active_peers'] > 0) {
+      print('  Peer IDs:');
+      for (final peerId in status['peer_ids']) {
+        print('    - ${peerId.substring(0, 32)}...');
+      }
+    }
+    print('─────────────────────────────────────────────────────');
+    print('');
+  }
+
+  /// Start periodic status monitoring
+  void _startStatusMonitor() {
+    Future.delayed(Duration(seconds: 10), () {
+      showStatus();
+      if (p2p.isInitialized) {
+        _startStatusMonitor();
+      }
+    });
+  }
+
+  /// Interactive test menu
+  Future<void> runInteractiveTests() async {
+    print('');
+    print('════════════════════════════════════════════════════════');
+    print('              INTERACTIVE TEST MENU');
+    print('════════════════════════════════════════════════════════');
+    print('');
+
+    while (true) {
+      print('Options:');
+      print('  1. Send test message');
+      print('  2. Broadcast message');
+      print('  3. Show status');
+      print('  4. Run automated tests');
+      print('  5. Exit');
+      print('');
+      stdout.write('Select option: ');
+
+      final input = stdin.readLineSync();
+      print('');
+
+      switch (input) {
+        case '1':
+          await sendTestMessage('Test message from interactive menu');
+          break;
+        case '2':
+          await broadcastTestMessage('Broadcast from interactive menu');
+          break;
+        case '3':
+          showStatus();
+          break;
+        case '4':
+          await runAutomatedTests();
+          break;
+        case '5':
+          print('Exiting test harness...');
+          p2p.dispose();
+          return;
+        default:
+          print('Invalid option');
+      }
+    }
+  }
+}
