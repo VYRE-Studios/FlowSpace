@@ -1,12 +1,14 @@
 # FlowSpace
 
-FlowSpace is a private company collaboration app aimed at the same day-to-day jobs as Slack, Microsoft Teams, and Zoom: workspace navigation, streams, meetings, calendar, file vault, and project coordination in one desktop experience.
+FlowSpace is a private company collaboration app aimed at the same day-to-day jobs as Slack, Microsoft Teams, and Zoom: workspace navigation, streams, meetings, calendar, file vault, and project coordination in one cross-platform experience.
 
 ## Current Direction
 
-FlowSpace is staying local-first for now.
+FlowSpace is staying local-first for now, while keeping the app architecture cross-platform.
 
-The Windows desktop app is the primary product surface. Local accounts, workspaces, starter channels, and offline session state are stored on the machine so the app can be used without standing up the backend stack. The backend services remain in the repository for future hosted sync, production auth, and multi-device infrastructure, but local/offline operation is the baseline until the app experience is stable.
+The local app is intended to run across Windows, macOS, Linux, and eventually iOS from the same Flutter codebase. Windows is the current development and validation machine, but macOS and Linux desktop targets are already present in the repo, and the iOS target remains part of the product direction.
+
+Local accounts, workspaces, starter channels, and offline session state are stored on the machine so the app can be used without standing up the backend stack. The backend services remain in the repository for future hosted sync, production auth, and multi-device infrastructure, but local/offline operation is the baseline until the app experience is stable.
 
 Default seeded local login:
 
@@ -55,14 +57,16 @@ You can also create a local account from the app. When the API is unavailable, r
 - Vault upload surface
 - Projects entry surface
 - Windows desktop build
+- macOS and Linux desktop project targets
+- iOS project target for future mobile validation
 
 ## Tech Stack
 
 Frontend:
 
 - Flutter and Dart
-- Windows desktop target today
-- macOS, Linux, Android, and iOS remain viable Flutter targets as the app matures
+- Windows, macOS, and Linux desktop targets
+- iOS target for the future mobile app
 - Local SQLite cache/store through `sqflite_common_ffi`
 - Secure platform storage through `flutter_secure_storage`
 
@@ -78,22 +82,26 @@ Backend, retained for future hosted mode:
 
 ## Run Locally
 
-From the Flutter client:
+From the Flutter client on the current platform:
 
-```powershell
+```bash
 cd client_flutter
 flutter pub get
-flutter run -d windows
+flutter run -d windows   # Windows
+flutter run -d macos     # macOS
+flutter run -d linux     # Linux
 ```
 
-To build the current Windows desktop app:
+To build the current desktop app:
 
-```powershell
+```bash
 cd client_flutter
-flutter build windows --debug
+flutter build windows --debug   # Windows
+flutter build macos --debug     # macOS, requires Xcode
+flutter build linux --debug     # Linux
 ```
 
-The built executable is created under:
+The Windows debug executable is created under:
 
 ```text
 client_flutter/build/windows/x64/runner/Debug/client_flutter.exe
@@ -118,6 +126,7 @@ The analyzer currently exits successfully with non-fatal warning/info debt. Trea
 FlowSpace/
   backend/                  NestJS API and future hosted services
   client_flutter/           Flutter desktop/mobile app
+  documents/                Archived implementation notes and guides
   docs/                     Planning docs and screenshots
   infrastructure/           Service configs for hosted development
   service-wrappers/         Windows service helper scripts
@@ -128,5 +137,6 @@ FlowSpace/
 1. Keep the desktop app usable in offline/local mode.
 2. Fill empty states with real local data flows.
 3. Make Streams, Vault, Calendar, Connect, and Projects useful without backend dependencies.
-4. Reduce visual/layout issues shown by the current screenshots.
-5. Reintroduce hosted backend sync only after the local app feels coherent and reliable.
+4. Keep Windows, macOS, Linux, and iOS targets healthy as features are added.
+5. Reduce visual/layout issues shown by the current screenshots.
+6. Reintroduce hosted backend sync only after the local app feels coherent and reliable.
