@@ -8,6 +8,9 @@ import 'secure_storage_service.dart';
 import 'user_service.dart';
 
 class AuthService {
+  static const String defaultLocalEmail = 'local@flowspace.app';
+  static const String defaultLocalPassword = 'flowspace123';
+
   /// Register a new user with email verification
   static Future<Map<String, dynamic>> registerWithVerification({
     required String name,
@@ -452,11 +455,26 @@ class AuthService {
     }
   }
 
+  /// Ensure downloaded local-first builds have a known offline account.
+  static Future<void> ensureDefaultLocalAccount() async {
+    final existing = await DatabaseService.getUserByEmail(defaultLocalEmail);
+    if (existing != null) return;
+
+    await _createLocalAccount(
+      name: 'Local Admin',
+      email: defaultLocalEmail,
+      password: defaultLocalPassword,
+      workspaceName: 'FlowSpace Local',
+      activateSession: false,
+    );
+  }
+
   static Future<Map<String, dynamic>> _createLocalAccount({
     required String name,
     required String email,
     required String password,
     required String workspaceName,
+    bool activateSession = true,
   }) async {
     final normalizedEmail = _normalizeEmail(email);
     final now = DateTime.now().toIso8601String();
@@ -525,10 +543,12 @@ class AuthService {
       });
     }
 
-    await SecureStorageService.setCurrentUserId(userId);
-    await SecureStorageService.setJwtToken('');
-    await SecureStorageService.clearRefreshToken();
-    ApiClient.clearAuth();
+    if (activateSession) {
+      await SecureStorageService.setCurrentUserId(userId);
+      await SecureStorageService.setJwtToken('');
+      await SecureStorageService.clearRefreshToken();
+      ApiClient.clearAuth();
+    }
 
     return {'success': true, 'offline': true, 'user': user};
   }

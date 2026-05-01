@@ -30,23 +30,24 @@ import 'ui/theme/acrylic_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   // Initialize Acrylic Theme (Windows 11 effects)
   await AcrylicTheme.initialize();
-  
+
   // Initialize error logging first
   await ErrorLoggingService.instance.init();
   ErrorLoggingService.instance.info('FlowSpace v2.0.0 starting...');
-  
-  // Initialize SQLite database (only used for caching - all data comes from backend)
+
+  // Initialize SQLite database and default local account for offline builds.
   await DatabaseService.database;
-  
+  await AuthService.ensureDefaultLocalAccount();
+
   // Initialize notification service
   await NotificationService.instance.init();
-  
+
   // Initialize background worker for heavy tasks
   await BackgroundWorkerService.instance.init();
-  
+
   // Initialize keyboard shortcuts
   KeyboardShortcutsService.instance.init();
 
@@ -55,7 +56,7 @@ Future<void> main() async {
 
   // Fire and forget update check on startup (non-blocking)
   FloUpdateService.checkAndApplyUpdates();
-  
+
   // Initialize project persistence system (non-blocking)
   _initializeProjectPersistence();
 
@@ -92,7 +93,7 @@ class FlowspaceApp extends StatelessWidget {
             final projectState = ProjectState();
             final activeWorkspace = context.read<ActiveWorkspaceState>();
             final channelContext = context.read<ChannelContext>();
-            
+
             // Wire callback to sync project changes into routing state AND load channels
             projectState.setProjectChangeCallback((project) {
               activeWorkspace.setActiveProject(project);
@@ -118,14 +119,13 @@ class FlowspaceApp extends StatelessWidget {
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Scaffold(
-                  body: Center(
-                    child: CircularProgressIndicator(),
-                  ),
+                  body: Center(child: CircularProgressIndicator()),
                 );
               }
 
               final destination = snapshot.data;
-              if (destination == null || destination.kind == _StartupDestinationKind.welcome) {
+              if (destination == null ||
+                  destination.kind == _StartupDestinationKind.welcome) {
                 return const WelcomeScreen();
               }
 
@@ -161,7 +161,10 @@ class FlowspaceApp extends StatelessWidget {
 
       return const _StartupDestination.welcome();
     } catch (e) {
-      ErrorLoggingService.instance.error('Error resolving startup destination', error: e);
+      ErrorLoggingService.instance.error(
+        'Error resolving startup destination',
+        error: e,
+      );
       return const _StartupDestination.welcome();
     }
   }
@@ -170,25 +173,32 @@ class FlowspaceApp extends StatelessWidget {
     try {
       await ChatIntegrationHelper.initialize(
         userId: user['id'] as String,
-        username: user['email'] as String? ?? user['displayName'] as String? ?? 'user',
+        username:
+            user['email'] as String? ??
+            user['displayName'] as String? ??
+            'user',
       );
-      
+
       // Initialize analytics with user ID
       AnalyticsService.instance.init(userId: user['id'] as String);
-      AnalyticsService.instance.track('app_started', properties: {'version': '1.1.0'});
-      
-      ErrorLoggingService.instance.info('Chat services initialized for user: ${user['id']}');
+      AnalyticsService.instance.track(
+        'app_started',
+        properties: {'version': '1.1.0'},
+      );
+
+      ErrorLoggingService.instance.info(
+        'Chat services initialized for user: ${user['id']}',
+      );
     } catch (e) {
-      ErrorLoggingService.instance.error('Error initializing chat services', error: e);
+      ErrorLoggingService.instance.error(
+        'Error initializing chat services',
+        error: e,
+      );
     }
   }
 }
 
-enum _StartupDestinationKind {
-  authenticated,
-  welcome,
-  testPicker,
-}
+enum _StartupDestinationKind { authenticated, welcome, testPicker }
 
 class _StartupDestination {
   final _StartupDestinationKind kind;
@@ -197,12 +207,12 @@ class _StartupDestination {
   const _StartupDestination._(this.kind, [this.user]);
 
   const _StartupDestination.authenticated(Map<String, dynamic> user)
-      : this._(_StartupDestinationKind.authenticated, user);
+    : this._(_StartupDestinationKind.authenticated, user);
 
   const _StartupDestination.welcome() : this._(_StartupDestinationKind.welcome);
 
   const _StartupDestination.testPicker()
-      : this._(_StartupDestinationKind.testPicker);
+    : this._(_StartupDestinationKind.testPicker);
 }
 
 /// Initialize real-time sync system
@@ -210,12 +220,14 @@ void _initializeSyncSystem() async {
   try {
     if (!FlowSpaceConfig.isConfigured) {
       print('[SyncSystem] WARNING: FlowSpace backend URL not configured!');
-      print('[SyncSystem] Update lib/services/flowspace_config.dart with your Render URL');
+      print(
+        '[SyncSystem] Update lib/services/flowspace_config.dart with your Render URL',
+      );
       return;
     }
 
     ErrorLoggingService.instance.info('Initializing real-time sync system...');
-    
+
     final user = await AuthService.getCurrentUser();
     if (user == null) {
       print('[SyncSystem] No user logged in - skipping sync initialization');
@@ -230,29 +242,37 @@ void _initializeSyncSystem() async {
 
     ErrorLoggingService.instance.info('Real-time sync system initialized');
   } catch (e) {
-    ErrorLoggingService.instance.error('Error initializing sync system', error: e);
+    ErrorLoggingService.instance.error(
+      'Error initializing sync system',
+      error: e,
+    );
   }
 }
 
 /// Initialize project persistence system - scan and load projects
 void _initializeProjectPersistence() async {
   try {
-    ErrorLoggingService.instance.info('Initializing project persistence system...');
-    
+    ErrorLoggingService.instance.info(
+      'Initializing project persistence system...',
+    );
+
     final registryService = ProjectRegistryService();
     final authToken = await AuthService.getAuthToken();
-    
+
     final loaderService = ProjectLoaderService(
       registryService: registryService,
       apiBaseUrl: FlowSpaceConfig.apiBaseUrl,
       authToken: authToken,
     );
-    
+
     // Scan and load all projects (non-blocking background task)
     await loaderService.scanAndLoadProjects();
-    
+
     ErrorLoggingService.instance.info('Project persistence system initialized');
   } catch (e) {
-    ErrorLoggingService.instance.error('Error initializing project persistence', error: e);
+    ErrorLoggingService.instance.error(
+      'Error initializing project persistence',
+      error: e,
+    );
   }
 }
