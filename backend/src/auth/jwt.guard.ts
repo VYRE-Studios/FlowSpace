@@ -26,7 +26,15 @@ export class JwtAuthGuard implements CanActivate {
     }
 
     const token = authHeader.slice('Bearer '.length);
-    request.user = this.authService.verifyToken(token);
+    const payload = this.authService.verifyToken(token);
+    
+    // Map JWT payload to user object expected by controllers
+    request.user = {
+      id: payload.sub,
+      email: payload.email,
+      displayName: payload.displayName,
+    } as any;
+    
     return true;
   }
 }

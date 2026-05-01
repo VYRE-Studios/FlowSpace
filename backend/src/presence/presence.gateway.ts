@@ -10,10 +10,12 @@ import {
   OnModuleInit,
   UnauthorizedException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
 import { Server, Socket } from 'socket.io';
 
-import { KratosService } from '../auth/kratos.service';
 import { RedisService } from '../shared/redis.service';
+import { AuthTokenPayload } from '../auth/jwt-payload.interface';
 import { WorkspaceEvents } from '../../libs/shared';
 
 interface PresenceMessage {
@@ -32,7 +34,8 @@ export class PresenceGateway implements OnModuleInit {
 
   constructor(
     private readonly redis: RedisService,
-    private readonly kratos: KratosService,
+    private readonly config: ConfigService,
+    private readonly jwtService: JwtService,
   ) {}
 
   async onModuleInit() {
@@ -77,7 +80,15 @@ export class PresenceGateway implements OnModuleInit {
     }
 
     client.join(`workspace:${workspaceId}`);
-    void this.setStatus(workspaceId, user.id, 'online');
+    void this.setStatus(workspaceId, user.id, 'online', user.displayName);
+    
+    // Broadcast user joined to workspace
+    this.server.to(`workspace:${workspaceId}`).emit('user_joined', {
+      userId: user.id,
+      displayName: user.displayName,
+      email: user.email,
+      soundUrl: '/assets/sounds/whoosh.mp3',
+    });
   }
 
   handleDisconnect(client: Socket) {
@@ -95,6 +106,13 @@ export class PresenceGateway implements OnModuleInit {
     }
 
     void this.setStatus(workspaceId, user.id, 'offline');
+    
+    // Broadcast user left to workspace
+    this.server.to(`workspace:${workspaceId}`).emit('user_left', {
+      userId: user.id,
+      displayName: user.displayName,
+      soundUrl: '/assets/sounds/whoosh.mp3',
+    });
   }
 
   @SubscribeMessage('channel.join')
@@ -134,7 +152,7 @@ export class PresenceGateway implements OnModuleInit {
       throw new BadRequestException('workspaceId and token are required');
     }
 
-    await this.setStatus(workspaceId, user.id, data.status ?? 'online');
+    await this.setStatus(workspaceId, user.id, data.status ?? 'online', user.displayName);
   }
 
   @SubscribeMessage('typing')
@@ -161,6 +179,8 @@ export class PresenceGateway implements OnModuleInit {
         userId: user.id,
         typing: body.typing,
         channelId: body.channelId,
+        displayName: user.displayName,
+        timestamp: Date.now(),
       });
   }
 
@@ -168,16 +188,20 @@ export class PresenceGateway implements OnModuleInit {
     workspaceId: string,
     userId: string,
     status: 'online' | 'offline' | 'away',
+    displayName?: string,
   ) {
     const key = `presence:${workspaceId}:${userId}`;
     const publisher = this.redis.getPublisher();
 
-    await publisher.set(key, status, 'EX', PresenceGateway.TTL_SECONDS);
+    // Store both status and displayName
+    const userData = JSON.stringify({ status, displayName });
+    await publisher.set(key, userData, 'EX', PresenceGateway.TTL_SECONDS);
 
-    const payload: PresenceMessage = {
+    const payload: PresenceMessage & { displayName?: string } = {
       workspaceId,
       userId,
       status,
+      displayName,
       lastActiveAt: new Date().toISOString(),
     };
 
@@ -193,39 +217,62 @@ export class PresenceGateway implements OnModuleInit {
     identity: Record<string, any>;
     session: Record<string, any>;
   }> {
-    const sessionToken =
-      (client.handshake.auth?.sessionToken as string | undefined) ??
-      (client.handshake.query.sessionToken as string | undefined);
-    const cookie = client.handshake.headers?.cookie as string | undefined;
+    // Extract JWT token from auth object or Authorization header
+    let token: string | undefined =
+      (client.handshake.auth?.token as string | undefined) ??
+      (client.handshake.query.token as string | undefined);
 
-    if (!sessionToken && !cookie) {
-      throw new UnauthorizedException('Missing session token');
+    // If not in auth/query, try Authorization header (Bearer token)
+    if (!token) {
+      const authHeader = client.handshake.headers?.authorization as
+        | string
+        | undefined;
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        token = authHeader.substring(7);
+      }
     }
 
-    const session = await this.kratos.whoAmI({
-      sessionToken,
-      cookie,
-    });
+    if (!token) {
+      throw new UnauthorizedException('Missing JWT token');
+    }
 
-    const identity = session.identity ?? {};
-    const traits = (identity.traits ?? {}) as Record<string, any>;
-    const email =
-      traits['email'] ??
-      traits['email_address'] ??
-      traits['username'] ??
-      identity.id;
-    const displayName =
-      traits['display_name'] ??
-      traits['name'] ??
-      traits['full_name'] ??
-      email;
+    // Verify JWT token using JwtService
+    const jwtSecret = this.config.get<string>('JWT_SECRET');
+    if (!jwtSecret) {
+      throw new Error('JWT_SECRET is not configured');
+    }
+
+    let payload: AuthTokenPayload;
+    try {
+      payload = this.jwtService.verify(token, {
+        secret: jwtSecret,
+      }) as AuthTokenPayload;
+    } catch (error) {
+      throw new UnauthorizedException('Invalid or expired JWT token');
+    }
+
+    // Extract user information from JWT payload
+    const userId = payload.sub;
+    const email = payload.email;
+    const displayName = payload.displayName ?? email;
+
+    if (!userId || !email) {
+      throw new UnauthorizedException('Invalid JWT payload');
+    }
 
     return {
-      id: identity.id,
+      id: userId,
       email,
       displayName,
-      identity,
-      session,
+      identity: {
+        id: userId,
+        email,
+        displayName,
+      },
+      session: {
+        id: userId,
+        email,
+      },
     };
   }
 }

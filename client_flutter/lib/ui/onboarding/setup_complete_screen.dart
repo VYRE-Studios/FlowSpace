@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/theme/flo_theme.dart';
-import '../shell.dart';
+import '../shell/workspace_shell.dart';
 
 class SetupCompleteScreen extends StatelessWidget {
   final String teamName;
@@ -107,7 +107,7 @@ class SetupCompleteScreen extends StatelessWidget {
                 onPressed: () {
                   Navigator.of(context).pushReplacement(
                     MaterialPageRoute(
-                      builder: (context) => const FlowShell(),
+                      builder: (context) => const WorkspaceShell(),
                     ),
                   );
                 },

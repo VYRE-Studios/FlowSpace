@@ -14,6 +14,12 @@ import { MeetModule } from './meet/meet.module';
 import { UsersModule } from './users/users.module';
 import { P2PGatewayModule } from './p2p-gateway/p2p-gateway.module';
 import { P2PRuntimeModule } from './p2p-runtime/p2p-runtime.module';
+import { UpdatesModule } from './updates/updates.module';
+import { AssetsModule } from './assets/assets.module';
+import { ProjectsModule } from './projects/projects.module';
+import { AnalyticsModule } from './analytics/analytics.module';
+import { AIModule } from './ai/ai.module';
+import { DownloadsModule } from './downloads/downloads.module';
 
 @Module({
   imports: [
@@ -29,6 +35,12 @@ import { P2PRuntimeModule } from './p2p-runtime/p2p-runtime.module';
     UsersModule,
     P2PGatewayModule,
     P2PRuntimeModule,
+    UpdatesModule,
+    AssetsModule,
+    ProjectsModule,
+    AnalyticsModule,
+    AIModule,
+    DownloadsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

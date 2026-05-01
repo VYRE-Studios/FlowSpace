@@ -1,23 +1,25 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Post,
+  Put,
   Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
 import type { Request } from 'express';
 
-import { KratosSessionGuard } from '../auth/kratos-session.guard';
+import { JwtAuthGuard } from '../auth/jwt.guard';
 import { ChatService } from './chat.service';
 
 @Controller('workspaces/:workspaceId/channels')
 export class ChatController {
   constructor(private readonly chatService: ChatService) {}
 
-  @UseGuards(KratosSessionGuard)
+  @UseGuards(JwtAuthGuard)
   @Get()
   listChannels(
     @Req() req: Request & {
@@ -28,7 +30,7 @@ export class ChatController {
     return this.chatService.listChannels(workspaceId, req.user?.id);
   }
 
-  @UseGuards(KratosSessionGuard)
+  @UseGuards(JwtAuthGuard)
   @Post()
   createChannel(
     @Req() req: Request & {
@@ -46,7 +48,7 @@ export class ChatController {
     });
   }
 
-  @UseGuards(KratosSessionGuard)
+  @UseGuards(JwtAuthGuard)
   @Get(':channelId/messages')
   getMessages(
     @Req() req: Request & {
@@ -65,7 +67,7 @@ export class ChatController {
     );
   }
 
-  @UseGuards(KratosSessionGuard)
+  @UseGuards(JwtAuthGuard)
   @Post(':channelId/messages')
   createMessage(
     @Req() req: Request & {
@@ -88,5 +90,103 @@ export class ChatController {
       attachments: body.attachments ?? [],
       parentId: body.parentId ?? null,
     });
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('messages/:messageId/reactions')
+  addReaction(
+    @Req() req: Request & { user?: { id: string } },
+    @Param('messageId') messageId: string,
+    @Body() body: { emoji: string },
+  ) {
+    return this.chatService.addReaction(
+      messageId,
+      req.user!.id,
+      body.emoji,
+    );
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete('messages/:messageId/reactions')
+  removeReaction(
+    @Req() req: Request & { user?: { id: string } },
+    @Param('messageId') messageId: string,
+    @Query('emoji') emoji: string,
+  ) {
+    return this.chatService.removeReaction(messageId, req.user!.id, emoji);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Put('messages/:messageId')
+  editMessage(
+    @Req() req: Request & { user?: { id: string } },
+    @Param('messageId') messageId: string,
+    @Body() body: { content: string },
+  ) {
+    return this.chatService.editMessage(
+      messageId,
+      req.user!.id,
+      body.content,
+    );
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete('messages/:messageId')
+  deleteMessage(
+    @Req() req: Request & { user?: { id: string } },
+    @Param('messageId') messageId: string,
+  ) {
+    return this.chatService.deleteMessage(messageId, req.user!.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('messages/:messageId/thread')
+  getThread(
+    @Req() req: Request & { user?: { id: string } },
+    @Param('messageId') messageId: string,
+  ) {
+    return this.chatService.getThreadMessages(messageId, req.user?.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('messages/:messageId/read')
+  markAsRead(
+    @Req() req: Request & { user?: { id: string } },
+    @Param('messageId') messageId: string,
+  ) {
+    return this.chatService.markAsRead(messageId, req.user!.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('messages/:messageId/reads')
+  getReadReceipts(@Param('messageId') messageId: string) {
+    return this.chatService.getReadReceipts(messageId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('messages/:messageId/pin')
+  pinMessage(
+    @Req() req: Request & { user?: { id: string } },
+    @Param('messageId') messageId: string,
+  ) {
+    return this.chatService.pinMessage(messageId, req.user!.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete('messages/:messageId/pin')
+  unpinMessage(
+    @Req() req: Request & { user?: { id: string } },
+    @Param('messageId') messageId: string,
+  ) {
+    return this.chatService.unpinMessage(messageId, req.user!.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get(':channelId/pinned')
+  getPinnedMessages(
+    @Req() req: Request & { user?: { id: string } },
+    @Param('channelId') channelId: string,
+  ) {
+    return this.chatService.getPinnedMessages(channelId, req.user?.id);
   }
 }

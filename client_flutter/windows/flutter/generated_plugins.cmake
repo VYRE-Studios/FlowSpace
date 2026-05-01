@@ -3,7 +3,11 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
+  audioplayers_windows
+  bitsdojo_window_windows
+  flutter_acrylic
   flutter_secure_storage_windows
+  system_theme
   url_launcher_windows
 )
 

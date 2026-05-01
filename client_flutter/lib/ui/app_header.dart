@@ -2,13 +2,9 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
-import 'widgets/header/header_actions_menu.dart';
 import 'widgets/header/header_search_bar.dart';
 import 'widgets/header/presence_selector.dart';
 import 'widgets/header/workspace_switcher.dart';
-import '../../widgets/status/connection_status_indicator.dart';
-import '../../widgets/status/presence_indicator.dart';
-import '../../widgets/status/sync_status_badge.dart';
 
 class AppHeader extends StatelessWidget {
   final String title;
@@ -48,56 +44,87 @@ class AppHeader extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Row(
             children: [
-              // Left side: workspace switcher + title.
+              // Left side: FLŌ logo
               WorkspaceSwitcher(
                 currentWorkspace: currentWorkspace,
                 workspaces: workspaces,
                 onSelect: onWorkspaceSelect ?? (_) {},
                 onCreateNew: onCreateWorkspace ?? () {},
               ),
-              const SizedBox(width: 24),
-              Text(
-                title,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 16,
+              // Center: search bar
+              Expanded(
+                child: Center(
+                  child: SizedBox(
+                    width: 380,
+                    child: const HeaderSearchBar(),
+                  ),
                 ),
               ),
-              const Spacer(),
-              // Center-right: search bar.
-              const HeaderSearchBar(),
-              const SizedBox(width: 16),
-              // Presence selector for the current user.
-              PresenceSelector(
-                current: presence,
-                onChange: onPresenceChange ?? (_) {},
+              // Right side: Avatar menu with presence + settings
+              PopupMenuButton<void>(
+                color: const Color(0xFF0F0F0F),
+                icon: const CircleAvatar(
+                  radius: 16,
+                  backgroundColor: Color(0xFF0066FF),
+                  child: Icon(Icons.person, size: 18, color: Colors.white),
+                ),
+                itemBuilder: (context) => [
+                  // Status header
+                  PopupMenuItem(
+                    enabled: false,
+                    child: Text(
+                      'Status',
+                      style: TextStyle(color: Colors.white70, fontSize: 12),
+                    ),
+                  ),
+                  // Presence options
+                  PopupMenuItem(
+                    onTap: () => onPresenceChange?.call(UserPresence.online),
+                    child: Row(
+                      children: [
+                        Icon(Icons.circle, color: Colors.greenAccent, size: 10),
+                        SizedBox(width: 8),
+                        Text('Online', style: TextStyle(color: Colors.white)),
+                      ],
+                    ),
+                  ),
+                  PopupMenuItem(
+                    onTap: () => onPresenceChange?.call(UserPresence.away),
+                    child: Row(
+                      children: [
+                        Icon(Icons.circle, color: Colors.yellowAccent, size: 10),
+                        SizedBox(width: 8),
+                        Text('Away', style: TextStyle(color: Colors.white)),
+                      ],
+                    ),
+                  ),
+                  PopupMenuItem(
+                    onTap: () => onPresenceChange?.call(UserPresence.busy),
+                    child: Row(
+                      children: [
+                        Icon(Icons.circle, color: Colors.orangeAccent, size: 10),
+                        SizedBox(width: 8),
+                        Text('Busy', style: TextStyle(color: Colors.white)),
+                      ],
+                    ),
+                  ),
+                  PopupMenuDivider(),
+                  // Settings
+                  PopupMenuItem(
+                    onTap: () {
+                      Navigator.of(context).pushNamed('/settings');
+                    },
+                    child: Row(
+                      children: [
+                        Icon(Icons.settings, size: 18, color: Colors.white70),
+                        SizedBox(width: 8),
+                        Text('Settings', style: TextStyle(color: Colors.white)),
+                      ],
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(width: 16),
-              // Floating status indicators: presence, connection quality, sync.
-              PresenceIndicator(state: PresenceState.online),
-              const SizedBox(width: 12),
-              ConnectionStatusIndicator(
-                ping: const Duration(milliseconds: 42),
-                connected: true,
-              ),
-              const SizedBox(width: 12),
-              SyncStatusBadge(status: SyncStatus.idle),
-              const SizedBox(width: 16),
-              HeaderActionsMenu(
-                onCreateWorkspace: onCreateWorkspace ?? () {},
-                onOpenSettings: () {
-                  // Simple placeholder; can be replaced with a proper
-                  // navigation callback from the shell.
-                  Navigator.of(context).maybePop();
-                },
-              ),
-              const SizedBox(width: 16),
-              const CircleAvatar(
-                radius: 16,
-                backgroundColor: Color(0xFF0066FF),
-                child: Icon(Icons.person, size: 18, color: Colors.white),
-              ),
             ],
           ),
         ),

@@ -161,24 +161,20 @@ class _WorkspaceSettingsViewState extends State<WorkspaceSettingsView> {
       );
     }
 
-    return RefreshIndicator(
-      onRefresh: _loadWorkspaceData,
-      color: const Color(0xFF0066FF),
-      child: SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildTierBanner(),
-            const SizedBox(height: 32),
-            _buildWorkspaceInfo(),
-            const SizedBox(height: 32),
-            _buildMembersList(),
-            const SizedBox(height: 32),
-            _buildChannelsList(),
-          ],
-        ),
+    return SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.all(32),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildTierBanner(),
+          const SizedBox(height: 32),
+          _buildWorkspaceInfo(),
+          const SizedBox(height: 32),
+          _buildMembersList(),
+          const SizedBox(height: 32),
+          _buildChannelsList(),
+        ],
       ),
     );
   }
@@ -267,44 +263,65 @@ class _WorkspaceSettingsViewState extends State<WorkspaceSettingsView> {
   }
 
   Widget _buildMembersList() {
-    return _buildSection(
-      title: 'Team Members (${_members.length}/5)',
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        ..._members.map((member) {
-          return ListTile(
-            leading: CircleAvatar(
-              backgroundColor: const Color(0xFF0066FF).withValues(alpha: 0.2),
-              child: Text(
-                (member['name'] as String? ?? 'U')[0].toUpperCase(),
-                style: const TextStyle(color: Color(0xFF0066FF)),
-              ),
-            ),
-            title: Text(
-              member['name'] as String? ?? 'Unknown',
-              style: const TextStyle(color: Colors.white),
-            ),
-            subtitle: Text(
-              member['email'] as String? ?? '',
-              style: const TextStyle(color: Colors.white54),
-            ),
-            trailing: Chip(
-              label: Text(
-                (member['role'] as String? ?? 'member').toUpperCase(),
-                style: const TextStyle(fontSize: 10),
-              ),
-              backgroundColor: const Color(0xFF0066FF).withValues(alpha: 0.2),
-              labelStyle: const TextStyle(color: Color(0xFF0066FF)),
-            ),
-          );
-        }),
+        _buildSection(
+          title: 'Team Members (${_members.length}/5)',
+          children: [
+            ..._members.map((member) {
+              return ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: const Color(0xFF0066FF).withValues(alpha: 0.2),
+                  child: Text(
+                    (member['name'] as String? ?? 'U')[0].toUpperCase(),
+                    style: const TextStyle(color: Color(0xFF0066FF)),
+                  ),
+                ),
+                title: Text(
+                  member['name'] as String? ?? 'Unknown',
+                  style: const TextStyle(color: Colors.white),
+                ),
+                subtitle: Text(
+                  member['email'] as String? ?? '',
+                  style: const TextStyle(color: Colors.white54),
+                ),
+                trailing: Chip(
+                  label: Text(
+                    (member['role'] as String? ?? 'member').toUpperCase(),
+                    style: const TextStyle(fontSize: 10),
+                  ),
+                  backgroundColor: const Color(0xFF0066FF).withValues(alpha: 0.2),
+                  labelStyle: const TextStyle(color: Color(0xFF0066FF)),
+                ),
+              );
+            }),
+          ],
+        ),
         const SizedBox(height: 16),
-        OutlinedButton.icon(
-          onPressed: _tier == 'free' && _members.length >= 5 ? null : null, // TODO: implement invite
+        FilledButton.icon(
+          onPressed: () {
+            print('FlowSpace: Invite Member FilledButton pressed!');
+            print('FlowSpace: Current tier: $_tier, members: ${_members.length}');
+            if (_tier == 'free' && _members.length >= 5) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Free tier limit: Maximum 5 members reached'),
+                  backgroundColor: Colors.orange,
+                ),
+              );
+              return;
+            }
+            print('FlowSpace: Calling _showInviteDialog');
+            _showInviteDialog();
+          },
           icon: const Icon(Icons.person_add),
           label: const Text('Invite Member'),
-          style: OutlinedButton.styleFrom(
-            foregroundColor: const Color(0xFF0066FF),
-            side: const BorderSide(color: Color(0xFF0066FF)),
+          style: FilledButton.styleFrom(
+            backgroundColor: const Color(0xFF0066FF),
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+            minimumSize: const Size(double.infinity, 48),
           ),
         ),
       ],
@@ -471,6 +488,23 @@ class _WorkspaceSettingsViewState extends State<WorkspaceSettingsView> {
     );
   }
 
+  void _showInviteDialog() {
+    final emailController = TextEditingController();
+    
+    showDialog(
+      context: context,
+      builder: (context) => _InviteDialog(
+        emailController: emailController,
+        workspaceId: _workspace!['id'] as String,
+        members: _members,
+        tier: _tier,
+        onMemberAdded: () {
+          _loadWorkspaceData();
+        },
+      ),
+    );
+  }
+  
   void _showRenameDialog() {
     final controller = TextEditingController(text: _workspace!['name'] as String?);
     
@@ -513,6 +547,203 @@ class _WorkspaceSettingsViewState extends State<WorkspaceSettingsView> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _InviteDialog extends StatefulWidget {
+  final TextEditingController emailController;
+  final String workspaceId;
+  final List<Map<String, dynamic>> members;
+  final String tier;
+  final VoidCallback onMemberAdded;
+
+  const _InviteDialog({
+    required this.emailController,
+    required this.workspaceId,
+    required this.members,
+    required this.tier,
+    required this.onMemberAdded,
+  });
+
+  @override
+  State<_InviteDialog> createState() => _InviteDialogState();
+}
+
+
+class _InviteDialogState extends State<_InviteDialog> {
+  bool _isInviting = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: const Color(0xFF1E1E1E),
+      title: const Text(
+        'Invite Team Member',
+        style: TextStyle(color: Colors.white),
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: widget.emailController,
+            style: const TextStyle(color: Colors.white),
+            decoration: const InputDecoration(
+              labelText: 'Email Address',
+              labelStyle: TextStyle(color: Colors.white70),
+              hintText: 'user@example.com',
+              hintStyle: TextStyle(color: Colors.white38),
+              enabledBorder: UnderlineInputBorder(
+                borderSide: BorderSide(color: Colors.white54),
+              ),
+              focusedBorder: UnderlineInputBorder(
+                borderSide: BorderSide(color: Color(0xFF0066FF)),
+              ),
+            ),
+            keyboardType: TextInputType.emailAddress,
+            enabled: !_isInviting,
+          ),
+          const SizedBox(height: 16),
+          if (widget.tier == 'free')
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.info_outline, color: Colors.orange, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Free tier: Max 5 members (${widget.members.length}/5)',
+                      style: const TextStyle(color: Colors.orange, fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: _isInviting ? null : () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _isInviting ? null : () async {
+            final email = widget.emailController.text.trim();
+            if (email.isEmpty) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Please enter an email address')),
+              );
+              return;
+            }
+            
+            if (!email.contains('@') || !email.contains('.')) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Please enter a valid email address')),
+              );
+              return;
+            }
+            
+            setState(() => _isInviting = true);
+            
+            try {
+              final user = await DatabaseService.getUserByEmail(email);
+              
+              if (user == null) {
+                final userId = '${DateTime.now().millisecondsSinceEpoch}_user';
+                final now = DateTime.now().toIso8601String();
+                
+                await DatabaseService.insertUser({
+                  'id': userId,
+                  'name': email.split('@')[0],
+                  'email': email,
+                  'password_hash': null,
+                  'avatar_url': null,
+                  'status': 'offline',
+                  'created_at': now,
+                  'updated_at': now,
+                });
+                
+                await DatabaseService.addWorkspaceMember({
+                  'workspace_id': widget.workspaceId,
+                  'user_id': userId,
+                  'role': 'member',
+                  'joined_at': now,
+                });
+                
+                if (!mounted) return;
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('$email has been added to the workspace'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+                
+                widget.onMemberAdded();
+              } else {
+                final existingMembers = await DatabaseService.getWorkspaceMembers(widget.workspaceId);
+                final isAlreadyMember = existingMembers.any((m) => m['email'] == email);
+                
+                if (isAlreadyMember) {
+                  if (!mounted) return;
+                  setState(() => _isInviting = false);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('User is already a member of this workspace')),
+                  );
+                  return;
+                }
+                
+                final now = DateTime.now().toIso8601String();
+                await DatabaseService.addWorkspaceMember({
+                  'workspace_id': widget.workspaceId,
+                  'user_id': user['id'] as String,
+                  'role': 'member',
+                  'joined_at': now,
+                });
+                
+                if (!mounted) return;
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('${user['name']} has been added to the workspace'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+                
+                widget.onMemberAdded();
+              }
+            } catch (e) {
+              if (!mounted) return;
+              setState(() => _isInviting = false);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Error adding member: $e'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
+          },
+          style: FilledButton.styleFrom(
+            backgroundColor: const Color(0xFF0066FF),
+          ),
+          child: _isInviting
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                )
+              : const Text('Invite'),
+        ),
+      ],
     );
   }
 }

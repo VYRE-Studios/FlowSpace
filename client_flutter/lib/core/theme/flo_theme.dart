@@ -1,27 +1,30 @@
 import 'package:flutter/material.dart';
+import '../../ui/constants/colors.dart';
 
 /// FLŌ Brand Theme
-/// Premium dark theme with vibrant blue accents
+/// Premium minimal dark theme with refined text hierarchy
 class FloTheme {
-  // Brand Colors
-  static const Color floPrimary = Color(0xFF0B93FF); // Vibrant blue
+  // Brand Colors - Premium Blue
+  static const Color floPrimary = AppColors.primary; // Premium blue #2563EB
   static const Color floSecondary = Color(0xFF00D9FF); // Cyan accent
   
-  // Backgrounds
-  static const Color bgPure = Color(0xFF000000); // Pure black
-  static const Color bgElevated1 = Color(0xFF0A0A0A); // Subtle elevation
-  static const Color bgElevated2 = Color(0xFF111111); // Cards
+  // Backgrounds - Premium Charcoal Gradient
+  static const Color bgPure = AppColors.bgBottom; // Charcoal gradient bottom
+  static const Color bgElevated1 = AppColors.sidebar; // Sidebar surface
+  static const Color bgElevated2 = AppColors.card; // Machined carbon cards
   static const Color bgElevated3 = Color(0xFF1A1A1A); // Dialogs
   
   // Surfaces
   static const Color surfaceHover = Color(0xFF1E1E1E);
   static const Color surfaceSelected = Color(0xFF252525);
   
-  // Text
-  static const Color textPrimary = Color(0xFFFFFFFF);
-  static const Color textSecondary = Color(0xFFB3B3B3);
-  static const Color textTertiary = Color(0xFF666666);
-  static const Color textDisabled = Color(0xFF404040);
+  // Text Ladder - Premium Minimal Brand Colors
+  // NO MORE PURE WHITE - refined hierarchy instead
+  static const Color textPrimary   = AppColors.textPrimary;   // #E6E7E9 - main titles
+  static const Color textSecondary = AppColors.textSecondary; // #B7BCC4 - section labels
+  static const Color textTertiary  = AppColors.textTertiary;  // #8F949C - supporting text
+  static const Color textMeta      = AppColors.textMeta;      // #5D6168 - timestamps
+  static const Color textDisabled  = AppColors.textDisabled;  // Disabled state
   
   // Borders
   static const Color borderSubtle = Color(0xFF1A1A1A);
@@ -87,11 +90,12 @@ class FloTheme {
   // Typography
   static const String fontFamily = 'Inter';
   
+  // LEGACY STATIC STYLES - UPDATED WITH BRAND TEXT COLORS
   static const TextStyle heading1 = TextStyle(
     fontFamily: fontFamily,
     fontSize: 48,
     fontWeight: FontWeight.w700,
-    color: textPrimary,
+    color: textPrimary,   // #E6E7E9 - NOT pure white
     letterSpacing: -0.5,
   );
   
@@ -99,7 +103,7 @@ class FloTheme {
     fontFamily: fontFamily,
     fontSize: 36,
     fontWeight: FontWeight.w700,
-    color: textPrimary,
+    color: textPrimary,   // #E6E7E9 - NOT pure white
     letterSpacing: -0.5,
   );
   
@@ -107,7 +111,7 @@ class FloTheme {
     fontFamily: fontFamily,
     fontSize: 28,
     fontWeight: FontWeight.w600,
-    color: textPrimary,
+    color: textPrimary,   // #E6E7E9 - NOT pure white
     letterSpacing: -0.25,
   );
   
@@ -115,35 +119,35 @@ class FloTheme {
     fontFamily: fontFamily,
     fontSize: 20,
     fontWeight: FontWeight.w600,
-    color: textPrimary,
+    color: textSecondary, // #B7BCC4 - section labels
   );
   
   static const TextStyle bodyLarge = TextStyle(
     fontFamily: fontFamily,
     fontSize: 16,
     fontWeight: FontWeight.w400,
-    color: textPrimary,
+    color: textTertiary,  // #8F949C - body text
   );
   
   static const TextStyle bodyMedium = TextStyle(
     fontFamily: fontFamily,
     fontSize: 14,
     fontWeight: FontWeight.w400,
-    color: textPrimary,
+    color: textTertiary,  // #8F949C - body text
   );
   
   static const TextStyle bodySmall = TextStyle(
     fontFamily: fontFamily,
     fontSize: 12,
     fontWeight: FontWeight.w400,
-    color: textSecondary,
+    color: textMeta,      // #5D6168 - timestamps
   );
   
   static const TextStyle labelLarge = TextStyle(
     fontFamily: fontFamily,
     fontSize: 14,
     fontWeight: FontWeight.w600,
-    color: textPrimary,
+    color: textSecondary, // #B7BCC4 - section labels
     letterSpacing: 0.5,
   );
   
@@ -151,20 +155,186 @@ class FloTheme {
     fontFamily: fontFamily,
     fontSize: 12,
     fontWeight: FontWeight.w600,
-    color: textPrimary,
+    color: textSecondary, // #B7BCC4 - labels
     letterSpacing: 0.5,
   );
   
-  static const TextStyle labelSmall = TextStyle(
+  // Sidebar-specific typography - Δ-PM2.A
+  static const TextStyle textSidebar = TextStyle(
+    fontFamily: fontFamily,
+    fontSize: 10,
+    fontWeight: FontWeight.w400,
+    letterSpacing: 0.4,
+    color: textSecondary,
+  );
+
+  static const TextStyle textSidebarActive = TextStyle(
     fontFamily: fontFamily,
     fontSize: 10,
     fontWeight: FontWeight.w600,
-    color: textSecondary,
     letterSpacing: 0.5,
+    color: AppColors.accentBlue,
+  );
+
+  static const TextStyle textSidebarSection = TextStyle(
+    fontFamily: fontFamily,
+    fontSize: 9,
+    fontWeight: FontWeight.w500,
+    letterSpacing: 1.1,
+    color: textMeta,
+    height: 1.6,
+  );
+
+  static const TextStyle textCapsHeader = TextStyle(
+    fontFamily: fontFamily,
+    fontSize: 11,
+    fontWeight: FontWeight.w600,
+    letterSpacing: 1.3,
+    color: AppColors.textPrimary,
   );
   
-  // Complete Material ThemeData
+  // Button typography - Δ-PM2.C
+  static const TextStyle buttonPrimary = TextStyle(
+    fontFamily: fontFamily,
+    fontSize: 13,
+    fontWeight: FontWeight.w600,
+    color: AppColors.textPrimary,
+    letterSpacing: 0.3,
+  );
+
+  static const TextStyle buttonSecondary = TextStyle(
+    fontFamily: fontFamily,
+    fontSize: 13,
+    fontWeight: FontWeight.w500,
+    color: AppColors.textSecondary,
+    letterSpacing: 0.3,
+  );
+  
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Δ-PM2.D UNIFIED TYPOGRAPHY LADDER
+  // Complete typographic system for cinematic dark interfaces
+  // ═══════════════════════════════════════════════════════════════════════════
+  
+  // DISPLAY TIER - Large headers, hero sections
+  static const TextStyle displayLarge = TextStyle(
+    fontFamily: fontFamily,
+    fontSize: 32,
+    fontWeight: FontWeight.w700,
+    letterSpacing: 0.4,
+    height: 1.15,
+    color: AppColors.textPrimary,
+  );
+
+  static const TextStyle displayMedium = TextStyle(
+    fontFamily: fontFamily,
+    fontSize: 26,
+    fontWeight: FontWeight.w600,
+    letterSpacing: 0.3,
+    height: 1.2,
+    color: AppColors.textPrimary,
+  );
+
+  static const TextStyle displaySmall = TextStyle(
+    fontFamily: fontFamily,
+    fontSize: 22,
+    fontWeight: FontWeight.w600,
+    letterSpacing: 0.25,
+    height: 1.22,
+    color: AppColors.textPrimary,
+  );
+
+  // TITLE TIER - Card headers, section titles
+  static const TextStyle titleLarge = TextStyle(
+    fontFamily: fontFamily,
+    fontSize: 20,
+    fontWeight: FontWeight.w600,
+    letterSpacing: 0.25,
+    height: 1.25,
+    color: AppColors.textPrimary,
+  );
+
+  static const TextStyle titleMedium = TextStyle(
+    fontFamily: fontFamily,
+    fontSize: 16,
+    fontWeight: FontWeight.w600,
+    letterSpacing: 0.2,
+    height: 1.28,
+    color: AppColors.textPrimary,
+  );
+
+  static const TextStyle titleSmall = TextStyle(
+    fontFamily: fontFamily,
+    fontSize: 13,
+    fontWeight: FontWeight.w600,
+    letterSpacing: 0.15,
+    height: 1.3,
+    color: AppColors.textPrimary,
+  );
+
+  // BODY TIER - Content text
+  static const TextStyle bodyPrimary = TextStyle(
+    fontFamily: fontFamily,
+    fontSize: 14,
+    fontWeight: FontWeight.w400,
+    height: 1.35,
+    color: AppColors.textPrimary,
+  );
+
+  static const TextStyle bodySecondary = TextStyle(
+    fontFamily: fontFamily,
+    fontSize: 13,
+    fontWeight: FontWeight.w400,
+    height: 1.35,
+    color: AppColors.textSecondary,
+  );
+
+  static const TextStyle bodyMuted = TextStyle(
+    fontFamily: fontFamily,
+    fontSize: 12,
+    fontWeight: FontWeight.w400,
+    height: 1.32,
+    letterSpacing: 0.1,
+    color: AppColors.textMuted,
+  );
+
+  // MICRO TIER - Captions, labels, metadata
+  static const TextStyle caption = TextStyle(
+    fontFamily: fontFamily,
+    fontSize: 11,
+    fontWeight: FontWeight.w400,
+    letterSpacing: 0.4,
+    height: 1.3,
+    color: AppColors.textSecondary,
+  );
+
+  static const TextStyle overline = TextStyle(
+    fontFamily: fontFamily,
+    fontSize: 10,
+    fontWeight: FontWeight.w600,
+    letterSpacing: 1.1,
+    height: 1.4,
+    color: AppColors.textMuted,
+  );
+
+  static const TextStyle labelSmall = TextStyle(
+    fontFamily: fontFamily,
+    fontSize: 10,
+    fontWeight: FontWeight.w500,
+    letterSpacing: 0.4,
+    height: 1.3,
+    color: AppColors.textSecondary,
+  );
+  
+  // Complete Material ThemeData - Premium Minimal
   static ThemeData get darkTheme {
+    final base = ThemeData.dark();
+    
+    // Apply text color baseline - all text defaults to textSecondary
+    final textTheme = base.textTheme.apply(
+      bodyColor: textSecondary,
+      displayColor: textSecondary,
+    );
+    
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
@@ -178,28 +348,93 @@ class FloTheme {
         error: error,
         onPrimary: Colors.white,
         onSecondary: Colors.white,
-        onSurface: textPrimary,
+        onSurface: textSecondary, // Default text baseline
         onError: Colors.white,
       ),
       
-      scaffoldBackgroundColor: bgPure,
+      scaffoldBackgroundColor: Colors.transparent, // Allow gradient backgrounds
       canvasColor: bgElevated2,
       cardColor: bgElevated2,
       dividerColor: borderSubtle,
       
-      // Typography
+      // Typography - Premium Minimal Text Hierarchy
       fontFamily: fontFamily,
-      textTheme: const TextTheme(
+      textTheme: textTheme.copyWith(
+        // Big headers like "Welcome to FlowSpace"
         displayLarge: heading1,
         displayMedium: heading2,
         displaySmall: heading3,
-        headlineMedium: heading4,
-        bodyLarge: bodyLarge,
-        bodyMedium: bodyMedium,
-        bodySmall: bodySmall,
-        labelLarge: labelLarge,
-        labelMedium: labelMedium,
-        labelSmall: labelSmall,
+        headlineMedium: const TextStyle(
+          fontFamily: fontFamily,
+          fontSize: 28,
+          fontWeight: FontWeight.w600,
+          color: textPrimary, // Premium primary for big headers
+          letterSpacing: 0.4,
+        ),
+        // MISSING TITLE VARIANTS - ADDED
+        titleLarge: const TextStyle(
+          fontFamily: fontFamily,
+          fontSize: 20,
+          fontWeight: FontWeight.w600,
+          color: textPrimary,
+          letterSpacing: 0.3,
+        ),
+        titleMedium: const TextStyle(
+          fontFamily: fontFamily,
+          fontSize: 16,
+          fontWeight: FontWeight.w500,
+          color: textSecondary, // Soft secondary
+          letterSpacing: 0.3,
+        ),
+        titleSmall: const TextStyle(
+          fontFamily: fontFamily,
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+          color: textSecondary, // Section labels - THIS WAS MISSING!
+          letterSpacing: 0.25,
+        ),
+        // Section labels: "Quick Actions", "Recent Activity"
+        labelLarge: const TextStyle(
+          fontFamily: fontFamily,
+          fontSize: 14,
+          fontWeight: FontWeight.w500,
+          color: textSecondary, // Section labels
+          letterSpacing: 0.4,
+        ),
+        labelMedium: const TextStyle(
+          fontFamily: fontFamily,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: textSecondary,
+          letterSpacing: 0.5,
+        ),
+        labelSmall: const TextStyle(
+          fontFamily: fontFamily,
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+          color: textSecondary,
+          letterSpacing: 0.5,
+        ),
+        // Body text inside cards
+        bodyLarge: const TextStyle(
+          fontFamily: fontFamily,
+          fontSize: 16,
+          fontWeight: FontWeight.w400,
+          color: textTertiary, // Supporting text
+        ),
+        bodyMedium: const TextStyle(
+          fontFamily: fontFamily,
+          fontSize: 13,
+          fontWeight: FontWeight.w400,
+          color: textTertiary, // Body text
+        ),
+        // Meta text: "2 hours ago", timestamps
+        bodySmall: const TextStyle(
+          fontFamily: fontFamily,
+          fontSize: 11,
+          fontWeight: FontWeight.w400,
+          color: textMeta, // Timestamps, low priority
+        ),
       ),
       
       // AppBar

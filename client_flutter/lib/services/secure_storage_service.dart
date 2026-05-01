@@ -20,6 +20,11 @@ class SecureStorageService {
   // Storage keys
   static const String _keyMasterKey = 'master_key_encrypted';
   static const String _keyUserId = 'current_user_id';
+  static const String _keyJwtToken = 'jwt_token';
+  static const String _keyRefreshToken = 'refresh_token';
+  static const String _keyRememberMe = 'remember_me';
+  static const String _keySavedEmail = 'saved_email';
+  static const String _keySavedPassword = 'saved_password';
 
   /// Store the encrypted master key
   static Future<void> storeEncryptedMasterKey(
@@ -57,6 +62,31 @@ class SecureStorageService {
     return await _storage.read(key: _keyUserId);
   }
 
+  /// Store the JWT token
+  static Future<void> setJwtToken(String token) async {
+    await _storage.write(key: _keyJwtToken, value: token);
+  }
+
+  /// Get the JWT token
+  static Future<String?> getJwtToken() async {
+    return await _storage.read(key: _keyJwtToken);
+  }
+
+  /// Store the refresh token
+  static Future<void> setRefreshToken(String token) async {
+    await _storage.write(key: _keyRefreshToken, value: token);
+  }
+
+  /// Get the refresh token
+  static Future<String?> getRefreshToken() async {
+    return await _storage.read(key: _keyRefreshToken);
+  }
+
+  /// Clear the refresh token
+  static Future<void> clearRefreshToken() async {
+    await _storage.delete(key: _keyRefreshToken);
+  }
+
   /// Delete encrypted master key (e.g., on logout)
   static Future<void> deleteEncryptedMasterKey(String userId) async {
     await _storage.delete(key: '${_keyMasterKey}_$userId');
@@ -78,5 +108,47 @@ class SecureStorageService {
       print('FlowSpace: Secure storage not available: $e');
       return false;
     }
+  }
+
+  // Remember Me functionality
+  
+  /// Set remember me preference
+  static Future<void> setRememberMe(bool remember) async {
+    await _storage.write(key: _keyRememberMe, value: remember.toString());
+  }
+
+  /// Get remember me preference
+  static Future<bool> getRememberMe() async {
+    final value = await _storage.read(key: _keyRememberMe);
+    return value == 'true';
+  }
+
+  /// Save login credentials (only if remember me is enabled)
+  static Future<void> saveCredentials(String email, String password) async {
+    await _storage.write(key: _keySavedEmail, value: email);
+    await _storage.write(key: _keySavedPassword, value: password);
+    await setRememberMe(true);
+    print('FlowSpace: Credentials saved');
+  }
+
+  /// Get saved credentials
+  static Future<Map<String, String>?> getSavedCredentials() async {
+    final rememberMe = await getRememberMe();
+    if (!rememberMe) return null;
+
+    final email = await _storage.read(key: _keySavedEmail);
+    final password = await _storage.read(key: _keySavedPassword);
+
+    if (email == null || password == null) return null;
+
+    return {'email': email, 'password': password};
+  }
+
+  /// Clear saved credentials
+  static Future<void> clearCredentials() async {
+    await _storage.delete(key: _keySavedEmail);
+    await _storage.delete(key: _keySavedPassword);
+    await setRememberMe(false);
+    print('FlowSpace: Credentials cleared');
   }
 }

@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'secure_storage_service.dart';
 
 class DatabaseService {
   static Database? _database;
@@ -19,14 +20,15 @@ class DatabaseService {
       databaseFactory = databaseFactoryFfi;
     }
 
+    // Local SQLite database is only used for caching
+    // All workspace/channel/message data comes from backend API
     final appDir = await getApplicationSupportDirectory();
     final dbPath = join(appDir.path, 'flowspace.db');
-    
-    print('FlowSpace: Database path: $dbPath');
+    print('FlowSpace: Using local database (cache only) at: $dbPath');
 
     return await openDatabase(
       dbPath,
-      version: 3,
+      version: 5,
       onCreate: _createTables,
       onUpgrade: _onUpgrade,
     );
@@ -106,6 +108,7 @@ class DatabaseService {
         sender_id TEXT NOT NULL,
         sender_name TEXT NOT NULL,
         content TEXT NOT NULL,
+        parent_id TEXT,
         encrypted_content TEXT,
         encrypted_nonce TEXT,
         encrypted_mac TEXT,
@@ -113,7 +116,8 @@ class DatabaseService {
         created_at TEXT NOT NULL,
         updated_at TEXT,
         FOREIGN KEY (channel_id) REFERENCES channels (id) ON DELETE CASCADE,
-        FOREIGN KEY (sender_id) REFERENCES users (id) ON DELETE CASCADE
+        FOREIGN KEY (sender_id) REFERENCES users (id) ON DELETE CASCADE,
+        FOREIGN KEY (parent_id) REFERENCES messages (id) ON DELETE CASCADE
       )
     ''');
 
@@ -153,6 +157,8 @@ class DatabaseService {
         workspace_id TEXT NOT NULL,
         name TEXT NOT NULL,
         description TEXT,
+        project_type TEXT,
+        template_id TEXT,
         status TEXT DEFAULT 'active',
         created_by TEXT NOT NULL,
         created_at TEXT NOT NULL,
@@ -295,6 +301,23 @@ class DatabaseService {
       
       print('FlowSpace: Added encryption fields to messages and vault_files tables');
     }
+    
+    if (oldVersion < 4) {
+      // Add parent_id column for threaded conversations
+      await db.execute('ALTER TABLE messages ADD COLUMN parent_id TEXT');
+      print('FlowSpace: Added parent_id column to messages table for threading support');
+    }
+    
+    if (oldVersion < 5) {
+      // Add project_type and template_id columns to projects table
+      try {
+        await db.execute('ALTER TABLE projects ADD COLUMN project_type TEXT');
+        await db.execute('ALTER TABLE projects ADD COLUMN template_id TEXT');
+        print('FlowSpace: Added project_type and template_id columns to projects table');
+      } catch (e) {
+        print('FlowSpace: Error adding project columns (may already exist): $e');
+      }
+    }
   }
 
   // User operations
@@ -317,8 +340,18 @@ class DatabaseService {
   }
 
   static Future<Map<String, dynamic>?> getCurrentUser() async {
+    // Get current user ID from secure storage (actual logged-in user)
+    final userId = await SecureStorageService.getCurrentUserId();
+    if (userId == null) {
+      // Fallback: get most recent user (for backward compatibility)
+      final db = await database;
+      final results = await db.query('users', limit: 1, orderBy: 'created_at DESC');
+      return results.isNotEmpty ? results.first : null;
+    }
+    
+    // Get user by ID from secure storage
     final db = await database;
-    final results = await db.query('users', limit: 1, orderBy: 'created_at DESC');
+    final results = await db.query('users', where: 'id = ?', whereArgs: [userId]);
     return results.isNotEmpty ? results.first : null;
   }
 

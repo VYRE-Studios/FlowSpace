@@ -1,5 +1,6 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
@@ -8,15 +9,20 @@ datasource db {
 }
 
 model User {
-  id                   String            @id @default(uuid())
-  email                String            @unique
+  id                   String                 @id @default(uuid())
+  email                String                 @unique
   passwordHash         String
   displayName          String?
-  createdAt            DateTime          @default(now())
+  nickname             String?
+  avatarUrl            String?                // NEW: Avatar image URL
+  emailVerified        Boolean                @default(false)  // NEW: Email verification status
+  createdAt            DateTime               @default(now())
   workspaceMemberships WorkspaceMember[]
-  ownedWorkspaces      Workspace[]       @relation("WorkspaceOwner")
+  ownedWorkspaces      Workspace[]            @relation("WorkspaceOwner")
   messages             ChatMessage[]
   files                VaultFile[]
+  verificationTokens   VerificationToken[]    // NEW: Email verification tokens
+  refreshTokens        RefreshToken[]         // NEW: Remember me tokens
 }
 
 model Workspace {
@@ -69,6 +75,14 @@ model ChatMessage {
   content     String
   attachments String[]      @default([])
   parentId    String?
+  reactions   Json?         // [{emoji: string, userId: string, timestamp: string}]
+  edited      Boolean       @default(false)
+  editedAt    DateTime?
+  deleted     Boolean       @default(false)
+  deletedAt   DateTime?
+  pinned      Boolean       @default(false)
+  pinnedAt    DateTime?
+  pinnedBy    String?
   createdAt   DateTime      @default(now())
   channel     Channel       @relation(fields: [channelId], references: [id], onDelete: Cascade)
   sender      User          @relation(fields: [senderId], references: [id])
@@ -77,6 +91,7 @@ model ChatMessage {
 
   @@index([parentId])
   @@index([channelId, createdAt])
+  @@index([channelId, pinned])
 }
 
 model VaultFile {
@@ -183,4 +198,109 @@ model IncomingMessage {
 
   @@index([fromPeer, processed])
   @@index([timestamp])
+}
+
+model Update {
+  id           String   @id @default(uuid())
+  version      String
+  build        String
+  platform     String   @default("windows")
+  downloadUrl  String?
+  releaseNotes String?
+  createdAt    DateTime @default(now())
+}
+
+model ChannelNotificationSetting {
+  id        String             @id @default(uuid())
+  userId    String
+  channelId String
+  mode      NotificationMode   @default(ALL_ACTIVITY)
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  @@unique([userId, channelId])
+  @@index([userId])
+  @@index([channelId])
+}
+
+enum NotificationMode {
+  ALL_ACTIVITY
+  MENTIONS_ONLY
+  MUTED
+}
+
+model MessageRead {
+  id        String   @id @default(uuid())
+  messageId String
+  userId    String
+  readAt    DateTime @default(now())
+
+  @@unique([messageId, userId])
+  @@index([messageId])
+  @@index([userId])
+}
+
+// Project Template System Models
+model Project {
+  id          String         @id @default(uuid())
+  name        String
+  templateId  String
+  workspaceId String
+  createdBy   String
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  boards      ProjectBoard[]
+
+  @@index([workspaceId])
+  @@index([createdBy])
+}
+
+model ProjectBoard {
+  id        String   @id @default(uuid())
+  projectId String
+  name      String
+  type      String   // kanban, storyboard, backlog, etc
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+model ProjectManifest {
+  id           String   @id @default(uuid())
+  projectId    String   @unique
+  manifestJson String   // JSON string containing full project manifest
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([projectId])
+}
+
+// Auth Enhancement Models
+model VerificationToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([token])
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  lastUsed  DateTime @default(now())
+  createdAt DateTime @default(now())
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([token])
 }

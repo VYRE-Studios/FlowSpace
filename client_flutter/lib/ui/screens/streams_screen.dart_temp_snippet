@@ -1,0 +1,62 @@
+  Widget _buildThreadSidebar() {
+    return Container(
+      width: 280,
+      decoration: const BoxDecoration(
+        color: AppColors.sidebar,
+        border: Border(
+          left: BorderSide(
+            color: AppColors.borderSoft,
+            width: 1,
+          ),
+        ),
+      ),
+      child: Column(
+        children: [
+          // Thread Header
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: const BoxDecoration(
+              border: Border(
+                bottom: BorderSide(
+                  color: AppColors.borderSofter,
+                  width: 1,
+                ),
+              ),
+            ),
+            child: Row(
+              children: [
+                Text('Thread', style: FloTheme.titleMedium),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.close, color: AppColors.textSecondary),
+                  onPressed: () => setState(() => _selectedThreadMessage = null),
+                ),
+              ],
+            ),
+          ),
+          
+          // Parent Message
+          Container(
+            padding: const EdgeInsets.all(16),
+            color: AppColors.bgBottom,
+            child: _MessageBubble(
+              message: _selectedThreadMessage!,
+              isThreadParent: true,
+            ),
+          ),
+          
+          const Divider(height: 1, color: AppColors.borderSofter),
+          
+          // Thread Replies (Placeholder for now)
+          Expanded(
+            child: Center(
+              child: Text(
+                'No replies yet',
+                style: FloTheme.bodySecondary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }

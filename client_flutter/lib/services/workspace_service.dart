@@ -1,16 +1,73 @@
 import 'database_service.dart';
 import 'auth_service.dart';
 import 'vault_storage_service.dart';
+import 'api_client.dart';
 
 class WorkspaceService {
+  /// Fetch workspaces from backend API
+  static Future<List<Map<String, dynamic>>> listWorkspaces(String userId) async {
+    try {
+      final response = await ApiClient.get('workspaces');
+      final data = response as Map<String, dynamic>;
+      final workspacesData = data['workspaces'] as List;
+      
+      final workspaces = <Map<String, dynamic>>[];
+      
+      for (final wsData in workspacesData) {
+        final ws = wsData as Map<String, dynamic>;
+        final channels = ws['channels'] as List? ?? [];
+        
+        // Convert to database format
+        final workspace = {
+          'id': ws['id'] as String,
+          'name': ws['name'] as String,
+          'slug': ws['slug'] as String,
+          'description': ws['description'] as String?,
+          'team_id': userId, // Use userId as team_id for compatibility
+          'owner_id': userId,
+          'workspace_type': 'project',
+          'created_at': ws['createdAt'] as String,
+          'updated_at': ws['updatedAt'] as String,
+        };
+        
+        workspaces.add(workspace);
+        
+        // Also save channels to database
+        for (final channelData in channels) {
+          final ch = channelData as Map<String, dynamic>;
+          await DatabaseService.insertChannel({
+            'id': ch['id'] as String,
+            'workspace_id': ws['id'] as String,
+            'name': ch['name'] as String,
+            'description': ch['description'] as String?,
+            'is_private': 0,
+            'created_at': ch['createdAt'] as String,
+            'updated_at': ch['updatedAt'] as String,
+          });
+        }
+      }
+      
+      return workspaces;
+    } catch (e) {
+      print('WorkspaceService: Error fetching workspaces from API: $e');
+      // Fallback to local database
+      return await DatabaseService.getUserWorkspaces(userId);
+    }
+  }
+  
   static Future<Map<String, dynamic>> getWorkspaceBootstrap() async {
-    // Load from SQLite
+    // Fetch from backend API - this handles everything including
+    // automatically adding new users to the main shared workspace
     final user = await AuthService.getCurrentUser();
     if (user == null) {
       return {'user': {}, 'workspaces': []};
     }
     
-    final workspaces = await DatabaseService.getUserWorkspaces(user['id'] as String);
+    final userId = user['id'] as String;
+    
+    // Fetch workspaces from backend - the backend automatically
+    // ensures all users are members of the main shared workspace
+    final workspaces = await listWorkspaces(userId);
     
     return {
       'user': user,
@@ -100,6 +157,7 @@ class WorkspaceService {
     await VaultStorageService.getVaultPath(workspaceId, folder: 'shared');
     await VaultStorageService.getVaultPath(workspaceId, folder: 'personal');
     
+    
     print('FlowSpace: Workspace created: $name');
     
     return await DatabaseService.getWorkspace(workspaceId) ?? {};
@@ -110,29 +168,55 @@ class WorkspaceService {
     required String name,
     String? description,
   }) async {
-    // Create channel locally in SQLite
-    final channelId = '${workspaceId}_${name.toLowerCase()}';
-    final now = DateTime.now().toIso8601String();
-    
-    await DatabaseService.insertChannel({
-      'id': channelId,
-      'workspace_id': workspaceId,
-      'name': name,
-      'description': description ?? '',
-      'is_private': 0,
-      'created_at': now,
-      'updated_at': now,
-    });
-    
-    print('FlowSpace: Channel created: $name');
-    
-    return {
-      'id': channelId,
-      'workspace_id': workspaceId,
-      'name': name,
-      'description': description,
-      'created_at': now,
-    };
+    try {
+      // Create channel via backend API
+      final response = await ApiClient.post(
+        'workspaces/$workspaceId/channels',
+        body: {
+          'name': name,
+          'description': description,
+          'private': false,
+        },
+      );
+      
+      final channelData = (response as Map<String, dynamic>)['channel'] as Map<String, dynamic>;
+      
+      // Sync to local database for offline support
+      await DatabaseService.insertChannel({
+        'id': channelData['id'] as String,
+        'workspace_id': workspaceId,
+        'name': channelData['name'] as String,
+        'description': channelData['description'] as String? ?? '',
+        'is_private': 0,
+        'created_at': channelData['createdAt'] as String,
+        'updated_at': channelData['updatedAt'] as String,
+      });
+      
+      print('FlowSpace: Channel created via API: $name');
+      
+      return {
+        'id': channelData['id'] as String,
+        'workspace_id': workspaceId,
+        'name': channelData['name'] as String,
+        'description': channelData['description'] as String?,
+        'created_at': channelData['createdAt'] as String,
+      };
+    } catch (e) {
+      print('WorkspaceService: Error creating channel via API: $e');
+      rethrow;
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>> getMembers(String workspaceId) async {
+    try {
+      final response = await ApiClient.get('workspaces/$workspaceId/members');
+      return (response as List)
+          .map((item) => Map<String, dynamic>.from(item as Map))
+          .toList();
+    } catch (e) {
+      print('WorkspaceService: Error fetching members from API: $e');
+      return await DatabaseService.getWorkspaceMembers(workspaceId);
+    }
   }
 
   /// Convenience helper to select a workspace by its display name.

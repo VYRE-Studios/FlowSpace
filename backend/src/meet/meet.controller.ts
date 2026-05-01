@@ -10,14 +10,14 @@ import {
 } from '@nestjs/common';
 import type { Request } from 'express';
 
-import { KratosSessionGuard } from '../auth/kratos-session.guard';
+import { JwtAuthGuard } from '../auth/jwt.guard';
 import { MeetService } from './meet.service';
 
-@Controller('api/v1/meet')
+@Controller('meet')
 export class MeetController {
   constructor(private readonly meetService: MeetService) {}
 
-  @UseGuards(KratosSessionGuard)
+  @UseGuards(JwtAuthGuard)
   @Get('sessions')
   async findAll(
     @Query('workspaceId') workspaceId?: string,
@@ -26,7 +26,7 @@ export class MeetController {
     return { meetings };
   }
 
-  @UseGuards(KratosSessionGuard)
+  @UseGuards(JwtAuthGuard)
   @Post()
   async create(
     @Req() req: Request & {
@@ -45,19 +45,19 @@ export class MeetController {
     });
   }
 
-  @UseGuards(KratosSessionGuard)
+  @UseGuards(JwtAuthGuard)
   @Post(':meetingId/start')
   async start(@Param('meetingId') meetingId: string) {
     return this.meetService.startMeeting(meetingId);
   }
 
-  @UseGuards(KratosSessionGuard)
+  @UseGuards(JwtAuthGuard)
   @Post(':meetingId/end')
   async end(@Param('meetingId') meetingId: string) {
     return this.meetService.endMeeting(meetingId);
   }
 
-  @UseGuards(KratosSessionGuard)
+  @UseGuards(JwtAuthGuard)
   @Post(':meetingId/join')
   async join(
     @Req() req: Request & {
@@ -71,7 +71,7 @@ export class MeetController {
     return this.meetService.joinMeeting(meetingId, req.user.id);
   }
 
-  @UseGuards(KratosSessionGuard)
+  @UseGuards(JwtAuthGuard)
   @Post(':meetingId/leave')
   async leave(
     @Req() req: Request & {
@@ -84,5 +84,26 @@ export class MeetController {
     }
     return this.meetService.leaveMeeting(meetingId, req.user.id);
   }
-}
 
+  @UseGuards(JwtAuthGuard)
+  @Get(':meetingId/token')
+  async getToken(
+    @Req() req: Request & {
+      user?: { id: string; email?: string; displayName?: string | null };
+    },
+    @Param('meetingId') meetingId: string,
+  ) {
+    if (!req.user?.id) {
+      throw new Error('User not authenticated');
+    }
+
+    const meeting = await this.meetService.getMeeting(meetingId);
+    const participantName = req.user.displayName || req.user.email || 'User';
+
+    return this.meetService.generateLiveKitToken(
+      meeting.roomId,
+      participantName,
+      req.user.id,
+    );
+  }
+}

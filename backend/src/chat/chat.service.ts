@@ -70,7 +70,7 @@ export class ChatService {
         ? {
             id: channel.messages[0].id,
             senderId: channel.messages[0].senderId,
-            senderName: channel.messages[0].sender.displayName ?? null,
+            senderName: channel.messages[0].sender.nickname ?? channel.messages[0].sender.displayName ?? null,
             content: channel.messages[0].content,
             createdAt: channel.messages[0].createdAt.toISOString(),
           }
@@ -106,7 +106,12 @@ export class ChatService {
       where: { channelId },
       orderBy: { createdAt: 'asc' },
       take: limit,
-      include: { sender: true },
+      include: {
+        sender: true,
+        _count: {
+          select: { replies: true },
+        },
+      },
     });
 
     return {
@@ -120,10 +125,19 @@ export class ChatService {
         id: message.id,
         channelId: message.channelId,
         senderId: message.senderId,
-        senderName: message.sender.displayName ?? null,
+        senderName: message.sender.nickname ?? message.sender.displayName ?? null,
         content: message.content,
         attachments: message.attachments,
         parentId: message.parentId ?? null,
+        reactions: this.formatReactions(message.reactions),
+        edited: message.edited,
+        editedAt: message.editedAt?.toISOString() ?? null,
+        deleted: message.deleted,
+        deletedAt: message.deletedAt?.toISOString() ?? null,
+        pinned: message.pinned,
+        pinnedAt: message.pinnedAt?.toISOString() ?? null,
+        pinnedBy: message.pinnedBy ?? null,
+        threadCount: message._count.replies,
         createdAt: message.createdAt.toISOString(),
       })),
     };
@@ -249,6 +263,9 @@ export class ChatService {
       }
     }
 
+    // Detect mentions in content
+    const mentions = this.extractMentions(content);
+
     const message = await this.prisma.chatMessage.create({
       data: {
         channelId,
@@ -281,6 +298,429 @@ export class ChatService {
       message: payload,
     });
 
+    // Broadcast mentions if any
+    if (mentions.length > 0) {
+      await this.redis.publish('mention.received', {
+        messageId: message.id,
+        channelId: message.channelId,
+        senderId: message.senderId,
+        senderName: message.sender.displayName ?? null,
+        mentions,
+        content: message.content,
+      });
+    }
+
     return { message: payload };
+  }
+
+  async addReaction(
+    messageId: string,
+    userId: string,
+    emoji: string,
+  ) {
+    const message = await this.prisma.chatMessage.findUnique({
+      where: { id: messageId },
+    });
+
+    if (!message) {
+      throw new NotFoundException('Message not found');
+    }
+
+    const reactions = (message.reactions as any[]) || [];
+    const existing = reactions.find(
+      (r: any) => r.userId === userId && r.emoji === emoji,
+    );
+
+    if (existing) {
+      throw new ConflictException('Reaction already exists');
+    }
+
+    reactions.push({
+      emoji,
+      userId,
+      timestamp: new Date().toISOString(),
+    });
+
+    await this.prisma.chatMessage.update({
+      where: { id: messageId },
+      data: { reactions },
+    });
+
+    await this.redis.publish('reaction.added', {
+      messageId,
+      channelId: message.channelId,
+      userId,
+      emoji,
+      reactions: this.formatReactions(reactions),
+    });
+
+    return { reactions: this.formatReactions(reactions) };
+  }
+
+  async removeReaction(
+    messageId: string,
+    userId: string,
+    emoji: string,
+  ) {
+    const message = await this.prisma.chatMessage.findUnique({
+      where: { id: messageId },
+    });
+
+    if (!message) {
+      throw new NotFoundException('Message not found');
+    }
+
+    let reactions = (message.reactions as any[]) || [];
+    reactions = reactions.filter(
+      (r: any) => !(r.userId === userId && r.emoji === emoji),
+    );
+
+    await this.prisma.chatMessage.update({
+      where: { id: messageId },
+      data: { reactions },
+    });
+
+    await this.redis.publish('reaction.removed', {
+      messageId,
+      channelId: message.channelId,
+      userId,
+      emoji,
+      reactions: this.formatReactions(reactions),
+    });
+
+    return { reactions: this.formatReactions(reactions) };
+  }
+
+  async editMessage(
+    messageId: string,
+    userId: string,
+    newContent: string,
+  ) {
+    const message = await this.prisma.chatMessage.findUnique({
+      where: { id: messageId },
+      include: { sender: true },
+    });
+
+    if (!message) {
+      throw new NotFoundException('Message not found');
+    }
+
+    if (message.senderId !== userId) {
+      throw new ForbiddenException('You can only edit your own messages');
+    }
+
+    const updated = await this.prisma.chatMessage.update({
+      where: { id: messageId },
+      data: {
+        content: newContent,
+        edited: true,
+        editedAt: new Date(),
+      },
+      include: { sender: true },
+    });
+
+    await this.redis.publish('message.edited', {
+      id: updated.id,
+      channelId: updated.channelId,
+      senderId: updated.senderId,
+      senderName: updated.sender.displayName ?? null,
+      content: updated.content,
+      edited: updated.edited,
+      editedAt: updated.editedAt?.toISOString(),
+    });
+
+    return { message: updated };
+  }
+
+  async deleteMessage(messageId: string, userId: string) {
+    const message = await this.prisma.chatMessage.findUnique({
+      where: { id: messageId },
+    });
+
+    if (!message) {
+      throw new NotFoundException('Message not found');
+    }
+
+    // Allow sender or workspace admins to delete
+    const membership = await this.prisma.workspaceMember.findFirst({
+      where: {
+        userId,
+        workspace: {
+          channels: {
+            some: { id: message.channelId },
+          },
+        },
+      },
+    });
+
+    if (
+      message.senderId !== userId &&
+      membership?.role !== WorkspaceRole.ADMIN &&
+      membership?.role !== WorkspaceRole.OWNER
+    ) {
+      throw new ForbiddenException(
+        'You can only delete your own messages or must be an admin',
+      );
+    }
+
+    await this.prisma.chatMessage.update({
+      where: { id: messageId },
+      data: {
+        deleted: true,
+        deletedAt: new Date(),
+        content: '',
+      },
+    });
+
+    await this.redis.publish('message.deleted', {
+      messageId,
+      channelId: message.channelId,
+    });
+
+    return { success: true };
+  }
+
+  async getThreadMessages(parentId: string, userId?: string) {
+    const parent = await this.prisma.chatMessage.findUnique({
+      where: { id: parentId },
+      include: { sender: true, channel: true },
+    });
+
+    if (!parent) {
+      throw new NotFoundException('Parent message not found');
+    }
+
+    if (userId) {
+      const membership = await this.prisma.workspaceMember.findFirst({
+        where: {
+          userId,
+          workspaceId: parent.channel.workspaceId,
+        },
+      });
+
+      if (!membership) {
+        throw new ForbiddenException('User is not a member of this workspace');
+      }
+    }
+
+    const replies = await this.prisma.chatMessage.findMany({
+      where: { parentId },
+      orderBy: { createdAt: 'asc' },
+      include: { sender: true },
+    });
+
+    return {
+      parent: {
+        id: parent.id,
+        channelId: parent.channelId,
+        senderId: parent.senderId,
+        senderName: parent.sender.displayName ?? null,
+        content: parent.content,
+        reactions: this.formatReactions(parent.reactions),
+        createdAt: parent.createdAt.toISOString(),
+      },
+      replies: replies.map((reply) => ({
+        id: reply.id,
+        channelId: reply.channelId,
+        senderId: reply.senderId,
+        senderName: reply.sender.displayName ?? null,
+        content: reply.content,
+        reactions: this.formatReactions(reply.reactions),
+        createdAt: reply.createdAt.toISOString(),
+      })),
+    };
+  }
+
+  async markAsRead(messageId: string, userId: string) {
+    await this.prisma.messageRead.upsert({
+      where: {
+        messageId_userId: { messageId, userId },
+      },
+      create: { messageId, userId },
+      update: { readAt: new Date() },
+    });
+
+    await this.redis.publish('message.read', {
+      messageId,
+      userId,
+      readAt: new Date().toISOString(),
+    });
+
+    return { success: true };
+  }
+
+  async getReadReceipts(messageId: string) {
+    const reads = await this.prisma.messageRead.findMany({
+      where: { messageId },
+    });
+
+    return reads.map((read) => ({
+      userId: read.userId,
+      readAt: read.readAt.toISOString(),
+    }));
+  }
+
+  private extractMentions(content: string): string[] {
+    const mentionRegex = /@([a-zA-Z0-9_]+)/g;
+    const matches = content.matchAll(mentionRegex);
+    return Array.from(matches).map((match) => match[1]);
+  }
+
+  async pinMessage(messageId: string, userId: string) {
+    const message = await this.prisma.chatMessage.findUnique({
+      where: { id: messageId },
+      include: { channel: true },
+    });
+
+    if (!message) {
+      throw new NotFoundException('Message not found');
+    }
+
+    // Check if user is admin or owner
+    const membership = await this.prisma.workspaceMember.findFirst({
+      where: {
+        userId,
+        workspaceId: message.channel.workspaceId,
+      },
+    });
+
+    if (
+      membership?.role !== WorkspaceRole.ADMIN &&
+      membership?.role !== WorkspaceRole.OWNER
+    ) {
+      throw new ForbiddenException('Only admins can pin messages');
+    }
+
+    const updated = await this.prisma.chatMessage.update({
+      where: { id: messageId },
+      data: {
+        pinned: true,
+        pinnedAt: new Date(),
+        pinnedBy: userId,
+      },
+    });
+
+    await this.redis.publish('message.pinned', {
+      messageId,
+      channelId: message.channelId,
+      pinnedBy: userId,
+    });
+
+    return { message: updated };
+  }
+
+  async unpinMessage(messageId: string, userId: string) {
+    const message = await this.prisma.chatMessage.findUnique({
+      where: { id: messageId },
+      include: { channel: true },
+    });
+
+    if (!message) {
+      throw new NotFoundException('Message not found');
+    }
+
+    // Check if user is admin or owner
+    const membership = await this.prisma.workspaceMember.findFirst({
+      where: {
+        userId,
+        workspaceId: message.channel.workspaceId,
+      },
+    });
+
+    if (
+      membership?.role !== WorkspaceRole.ADMIN &&
+      membership?.role !== WorkspaceRole.OWNER
+    ) {
+      throw new ForbiddenException('Only admins can unpin messages');
+    }
+
+    const updated = await this.prisma.chatMessage.update({
+      where: { id: messageId },
+      data: {
+        pinned: false,
+        pinnedAt: null,
+        pinnedBy: null,
+      },
+    });
+
+    await this.redis.publish('message.unpinned', {
+      messageId,
+      channelId: message.channelId,
+    });
+
+    return { message: updated };
+  }
+
+  async getPinnedMessages(channelId: string, userId?: string) {
+    const channel = await this.prisma.channel.findUnique({
+      where: { id: channelId },
+    });
+
+    if (!channel) {
+      throw new NotFoundException('Channel not found');
+    }
+
+    if (userId) {
+      const membership = await this.prisma.workspaceMember.findFirst({
+        where: {
+          userId,
+          workspaceId: channel.workspaceId,
+        },
+      });
+
+      if (!membership) {
+        throw new ForbiddenException('User is not a member of this workspace');
+      }
+    }
+
+    const messages = await this.prisma.chatMessage.findMany({
+      where: {
+        channelId,
+        pinned: true,
+      },
+      orderBy: { pinnedAt: 'desc' },
+      include: { sender: true },
+    });
+
+    return messages.map((message) => ({
+      id: message.id,
+      channelId: message.channelId,
+      senderId: message.senderId,
+      senderName: message.sender.displayName ?? null,
+      content: message.content,
+      pinned: message.pinned,
+      pinnedAt: message.pinnedAt?.toISOString(),
+      pinnedBy: message.pinnedBy,
+      reactions: this.formatReactions(message.reactions),
+      createdAt: message.createdAt.toISOString(),
+    }));
+  }
+
+  private formatReactions(reactionsJson: unknown): Record<string, string[]> {
+    if (!reactionsJson) {
+      return {};
+    }
+
+    if (Array.isArray(reactionsJson)) {
+      return reactionsJson.reduce<Record<string, string[]>>((acc, reaction) => {
+        if (
+          reaction &&
+          typeof reaction === 'object' &&
+          'emoji' in reaction &&
+          'userId' in reaction
+        ) {
+          const emoji = String((reaction as { emoji: unknown }).emoji);
+          const userId = String((reaction as { userId: unknown }).userId);
+          acc[emoji] = [...(acc[emoji] ?? []), userId];
+        }
+        return acc;
+      }, {});
+    }
+
+    if (typeof reactionsJson === 'object') {
+      return reactionsJson as Record<string, string[]>;
+    }
+
+    return {};
   }
 }

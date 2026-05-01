@@ -216,11 +216,32 @@ export class WorkspacesService {
       return;
     }
 
-    const inferredName =
-      user.displayName ??
-      (user.email ? `${user.email.split('@')[0]}'s Space` : 'My Workspace');
+    // FIXED: Add all new users to the main workspace instead of creating personal workspaces
+    const MAIN_WORKSPACE_SLUG = 'vyrevault-studios';
+    
+    // Check if main workspace exists
+    const mainWorkspace = await this.prisma.workspace.findUnique({
+      where: { slug: MAIN_WORKSPACE_SLUG },
+    });
 
-    await this.createWorkspace(inferredName, user.id, 'Default workspace');
+    if (mainWorkspace) {
+      // Add user to main workspace
+      await this.prisma.workspaceMember.create({
+        data: {
+          workspaceId: mainWorkspace.id,
+          userId: user.id,
+          role: 'MEMBER',
+        },
+      });
+      console.log(`[WorkspaceService] Auto-added user ${user.email} to main workspace "${mainWorkspace.name}"`);
+    } else {
+      // Fallback: create personal workspace if main workspace doesn't exist
+      console.warn(`[WorkspaceService] Main workspace "${MAIN_WORKSPACE_SLUG}" not found, creating personal workspace for ${user.email}`);
+      const inferredName =
+        user.displayName ??
+        (user.email ? `${user.email.split('@')[0]}'s Space` : 'My Workspace');
+      await this.createWorkspace(inferredName, user.id, 'Default workspace');
+    }
   }
 
   private async generateUniqueSlug(name: string): Promise<string> {

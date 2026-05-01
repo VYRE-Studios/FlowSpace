@@ -1,30 +1,46 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import 'package:client_flutter/main.dart';
+import 'package:flo/models/legacy/legacy_message.dart';
+import 'package:flo/services/chat_models.dart';
+import 'package:flo/state/active_workspace_state.dart';
+import 'package:flo/ui/views/chat_view.dart';
+import 'package:provider/provider.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  test('LegacyMessage adapts modern attachments and reactions', () {
+    final legacy = LegacyMessage(
+      ChatMessage.fromJson({
+        'id': 'message-1',
+        'channelId': 'channel-1',
+        'senderId': 'user-1',
+        'content': 'Attached',
+        'createdAt': '2026-05-01T10:30:00.000Z',
+        'attachments': [
+          {'id': 'file-1', 'name': 'brief.pdf', 'type': 'file', 'url': 'https://example.com/brief.pdf'},
+        ],
+        'reactions': {
+          'like': ['user-2', 'user-3'],
+        },
+      }),
+    );
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    expect(legacy.attachments, ['https://example.com/brief.pdf']);
+    expect(legacy.imageUrl, 'https://example.com/brief.pdf');
+    expect(legacy.replyCount, 0);
+    expect(legacy.reactions.single['count'], 2);
+  });
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+  testWidgets('ChatView compatibility route renders', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1440, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    await tester.pumpWidget(
+      ChangeNotifierProvider(
+        create: (_) => ActiveWorkspaceState(),
+        child: const MaterialApp(home: ChatView()),
+      ),
+    );
+
+    expect(find.byType(ChatView), findsOneWidget);
   });
 }

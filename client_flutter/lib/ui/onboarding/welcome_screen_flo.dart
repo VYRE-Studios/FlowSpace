@@ -2,9 +2,6 @@
 // Run this script to update all FlowSpace references to FLŌ
 
 import 'package:flutter/material.dart';
-import '../../core/theme/flo_theme.dart';
-import '../../core/theme/flo_brand.dart';
-import '../../ui/widgets/flo_components.dart';
 import 'setup_user_screen.dart';
 
 class WelcomeScreen extends StatelessWidget {
@@ -13,7 +10,7 @@ class WelcomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: FloTheme.bgPure,
+      backgroundColor: Colors.black,
       body: Center(
         child: Container(
           constraints: const BoxConstraints(maxWidth: 500),
@@ -26,8 +23,8 @@ class WelcomeScreen extends StatelessWidget {
               Container(
                 width: 120,
                 height: 120,
-                decoration: BoxDecoration(
-                  color: FloTheme.floPrimary,
+                decoration: const BoxDecoration(
+                  color: Colors.blueAccent,
                   shape: BoxShape.circle,
                 ),
                 child: Center(
@@ -45,12 +42,14 @@ class WelcomeScreen extends StatelessWidget {
               const SizedBox(height: 24),
               
               // Welcome text
-              FloTheme.gradientText(
+              const Text(
                 'Welcome to FLŌ',
                 style: TextStyle(
                   fontSize: 32,
                   fontWeight: FontWeight.bold,
+                  color: Colors.white,
                 ),
+                textAlign: TextAlign.center,
               ),
               const SizedBox(height: 16),
               
@@ -59,35 +58,34 @@ class WelcomeScreen extends StatelessWidget {
                 'The Unified Operations Core',
                 style: TextStyle(
                   fontSize: 16,
-                  color: FloTheme.textSecondary,
+                  color: Colors.white70,
                 ),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 48),
               
               // Feature tiles
-              _FeatureTile(
-                icon: FloIcons.chat,
+              const _FeatureTile(
+                icon: Icons.chat,
                 title: 'Real-time Chat',
                 subtitle: 'Stay connected with your team',
               ),
               const SizedBox(height: 16),
-              _FeatureTile(
-                icon: FloIcons.video,
+              const _FeatureTile(
+                icon: Icons.video_call,
                 title: 'Video Meetings',
                 subtitle: 'Face-to-face collaboration',
               ),
               const SizedBox(height: 16),
-              _FeatureTile(
-                icon: FloIcons.vault,
+              const _FeatureTile(
+                icon: Icons.folder,
                 title: 'Secure Vault',
                 subtitle: 'Share files safely',
               ),
               const SizedBox(height: 48),
               
               // Get Started button
-              FloButton(
-                text: 'Get Started',
+              ElevatedButton(
                 onPressed: () {
                   Navigator.of(context).pushReplacement(
                     MaterialPageRoute(
@@ -95,6 +93,7 @@ class WelcomeScreen extends StatelessWidget {
                     ),
                   );
                 },
+                child: const Text('Get Started'),
               ),
             ],
           ),
@@ -122,7 +121,7 @@ class _FeatureTile extends StatelessWidget {
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            gradient: FloTheme.floGradient,
+            color: Colors.blueAccent,
             borderRadius: BorderRadius.circular(12),
           ),
           child: Icon(icon, color: Colors.white, size: 24),
@@ -134,17 +133,17 @@ class _FeatureTile extends StatelessWidget {
             children: [
               Text(
                 title,
-                style: TextStyle(
+                style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
-                  color: FloTheme.textPrimary,
+                  color: Colors.white,
                 ),
               ),
               Text(
                 subtitle,
-                style: TextStyle(
+                style: const TextStyle(
                   fontSize: 14,
-                  color: FloTheme.textSecondary,
+                  color: Colors.white70,
                 ),
               ),
             ],

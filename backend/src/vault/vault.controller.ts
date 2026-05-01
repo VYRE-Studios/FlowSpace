@@ -16,14 +16,14 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import type { Request } from 'express';
 
-import { KratosSessionGuard } from '../auth/kratos-session.guard';
+import { JwtAuthGuard } from '../auth/jwt.guard';
 import { VaultService } from './vault.service';
 
 @Controller('vault')
 export class VaultController {
   constructor(private readonly vault: VaultService) {}
 
-  @UseGuards(KratosSessionGuard)
+  @UseGuards(JwtAuthGuard)
   @Post(':workspaceId/upload')
   @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
   uploadFile(
@@ -46,7 +46,7 @@ export class VaultController {
     return this.vault.uploadToVault(file, workspaceId, resolvedUploader);
   }
 
-  @UseGuards(KratosSessionGuard)
+  @UseGuards(JwtAuthGuard)
   @Get(':workspaceId/recent')
   listRecent(
     @Req() req: Request & {
@@ -59,7 +59,7 @@ export class VaultController {
     return this.vault.listRecentFiles(workspaceId, req.user?.id, take);
   }
 
-  @UseGuards(KratosSessionGuard)
+  @UseGuards(JwtAuthGuard)
   @Get('files/:fileId')
   getFile(
     @Req() req: Request & {
@@ -70,7 +70,7 @@ export class VaultController {
     return this.vault.getFile(fileId, req.user?.id);
   }
 
-  @UseGuards(KratosSessionGuard)
+  @UseGuards(JwtAuthGuard)
   @Post('files/:fileId/delete')
   deleteFile(
     @Req() req: Request & {

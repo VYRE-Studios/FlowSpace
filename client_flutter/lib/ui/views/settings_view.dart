@@ -5,8 +5,13 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../services/auth_service.dart';
 import '../../services/database_service.dart';
 import '../../services/update_service.dart';
+import '../../services/user_service.dart';
 import '../../services/workspace_service.dart';
 import '../../services/vault_storage_service.dart';
+import '../../services/secure_storage_service.dart';
+import '../../services/database_credential_service.dart';
+import 'database_settings_view.dart';
+import '../onboarding/welcome_screen.dart';
 
 class SettingsView extends StatefulWidget {
   final String? workspaceName;
@@ -165,6 +170,16 @@ class _SettingsViewState extends State<SettingsView> {
             children: [
               _buildAccountInfo(),
               const SizedBox(height: 16),
+              _buildSettingTile(
+                title: 'Edit Nickname',
+                subtitle: _user?['nickname'] != null 
+                    ? 'Current: @${_user!['nickname']}'
+                    : 'Set a nickname for @mentions',
+                icon: Icons.alternate_email,
+                onTap: () {
+                  _showEditNicknameDialog();
+                },
+              ),
               _buildSettingTile(
                 title: 'Profile',
                 subtitle: 'Edit your profile information',
@@ -482,6 +497,20 @@ class _SettingsViewState extends State<SettingsView> {
               ),
               _buildStoragePathTile(),
               _buildSettingTile(
+                title: 'Database Connection',
+                subtitle: 'Configure secure database credentials',
+                icon: Icons.storage,
+                iconColor: const Color(0xFF0066FF),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const DatabaseSettingsView(),
+                    ),
+                  );
+                },
+              ),
+              _buildSettingTile(
                 title: 'Export Data',
                 subtitle: 'Export your workspace data',
                 icon: Icons.download,
@@ -614,6 +643,7 @@ class _SettingsViewState extends State<SettingsView> {
   Widget _buildAccountInfo() {
     final email = _user?['email'] as String? ?? 'user@example.com';
     final name = _user?['name'] as String? ?? email.split('@').first;
+    final nickname = _user?['nickname'] as String?;
     
     return Container(
       padding: const EdgeInsets.all(16),
@@ -649,6 +679,22 @@ class _SettingsViewState extends State<SettingsView> {
                     fontSize: 14,
                   ),
                 ),
+                if (nickname != null) ...[
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      const Icon(Icons.alternate_email, size: 12, color: Color(0xFF0066FF)),
+                      const SizedBox(width: 4),
+                      Text(
+                        nickname,
+                        style: const TextStyle(
+                          color: Color(0xFF0066FF),
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
@@ -834,12 +880,9 @@ class _SettingsViewState extends State<SettingsView> {
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () {
-              // TODO: Implement sign out
+            onPressed: () async {
               Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Sign out feature coming soon!')),
-              );
+              await _signOut();
             },
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
             child: const Text('Sign Out'),
@@ -847,6 +890,46 @@ class _SettingsViewState extends State<SettingsView> {
         ],
       ),
     );
+  }
+
+  Future<void> _signOut() async {
+    try {
+      // Get user ID before clearing
+      final user = await AuthService.getCurrentUser();
+      final userId = user?['id'] as String?;
+      
+      // Clear local database user data first
+      if (userId != null) {
+        final db = await DatabaseService.database;
+        await db.delete('users', where: 'id = ?', whereArgs: [userId]);
+      }
+      
+      // Call AuthService logout to clear tokens and secure storage
+      await AuthService.logout();
+      
+      // Navigate to welcome screen
+      if (!mounted) return;
+      
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (context) => const WelcomeScreen()),
+        (route) => false, // Remove all previous routes
+      );
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Signed out successfully'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error signing out: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   void _showKeyBindingDialog() {
@@ -1240,13 +1323,33 @@ class _SettingsViewState extends State<SettingsView> {
           );
         }),
         const SizedBox(height: 16),
-        OutlinedButton.icon(
-          onPressed: _tier == 'free' && _members.length >= 5 ? null : null, // TODO: implement invite
+        FilledButton.icon(
+          onPressed: () {
+            print('SettingsView: Invite Member button clicked!');
+            if (_workspace == null) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('No workspace selected')),
+              );
+              return;
+            }
+            if (_tier == 'free' && _members.length >= 5) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Free tier limit: Maximum 5 members reached'),
+                  backgroundColor: Colors.orange,
+                ),
+              );
+              return;
+            }
+            _showInviteDialog();
+          },
           icon: const Icon(Icons.person_add),
           label: const Text('Invite Member'),
-          style: OutlinedButton.styleFrom(
-            foregroundColor: const Color(0xFF0066FF),
-            side: const BorderSide(color: Color(0xFF0066FF)),
+          style: FilledButton.styleFrom(
+            backgroundColor: const Color(0xFF0066FF),
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+            minimumSize: const Size(double.infinity, 48),
           ),
         ),
       ],
@@ -1635,6 +1738,314 @@ class _SettingsViewState extends State<SettingsView> {
         ),
       );
     }
+  }
+
+  void _showInviteDialog() {
+    if (_workspace == null) return;
+    
+    final emailController = TextEditingController();
+    final workspaceId = _workspace!['id'] as String;
+    
+    showDialog(
+      context: context,
+      builder: (context) => _InviteDialog(
+        emailController: emailController,
+        workspaceId: workspaceId,
+        members: _members,
+        tier: _tier,
+        onMemberAdded: () {
+          _loadSettings();
+        },
+      ),
+    );
+  }
+
+  void _showEditNicknameDialog() {
+    final currentNickname = _user?['nickname'] as String? ?? '';
+    final controller = TextEditingController(text: currentNickname);
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E1E),
+        title: const Text('Edit Nickname', style: TextStyle(color: Colors.white)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Your nickname is used for @mentions in chat',
+              style: TextStyle(color: Colors.white70, fontSize: 12),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                labelText: 'Nickname',
+                labelStyle: const TextStyle(color: Colors.white70),
+                hintText: 'e.g., john, jdoe',
+                hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)),
+                prefixText: '@',
+                prefixStyle: const TextStyle(color: Color(0xFF0066FF)),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              final newNickname = controller.text.trim();
+              
+              // Validate nickname (alphanumeric and underscores only)
+              if (newNickname.isNotEmpty && !RegExp(r'^[a-zA-Z0-9_]+$').hasMatch(newNickname)) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Nickname can only contain letters, numbers, and underscores'),
+                    backgroundColor: Colors.orange,
+                  ),
+                );
+                return;
+              }
+              
+              try {
+                // Update nickname on backend
+                await UserService.updateProfile(
+                  nickname: newNickname.isEmpty ? null : newNickname,
+                );
+                
+                // Update local state
+                if (_user != null) {
+                  _user!['nickname'] = newNickname.isEmpty ? null : newNickname;
+                  setState(() {});
+                }
+                
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      newNickname.isEmpty 
+                          ? 'Nickname removed'
+                          : 'Nickname updated to @$newNickname',
+                    ),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              } catch (e) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Error updating nickname: $e'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            },
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFF0066FF)),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InviteDialog extends StatefulWidget {
+  final TextEditingController emailController;
+  final String workspaceId;
+  final List<Map<String, dynamic>> members;
+  final String tier;
+  final VoidCallback onMemberAdded;
+
+  const _InviteDialog({
+    required this.emailController,
+    required this.workspaceId,
+    required this.members,
+    required this.tier,
+    required this.onMemberAdded,
+  });
+
+  @override
+  State<_InviteDialog> createState() => _InviteDialogState();
+}
+
+class _InviteDialogState extends State<_InviteDialog> {
+  bool _isInviting = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: const Color(0xFF1E1E1E),
+      title: const Text(
+        'Invite Team Member',
+        style: TextStyle(color: Colors.white),
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: widget.emailController,
+            style: const TextStyle(color: Colors.white),
+            decoration: const InputDecoration(
+              labelText: 'Email Address',
+              labelStyle: TextStyle(color: Colors.white70),
+              hintText: 'user@example.com',
+              hintStyle: TextStyle(color: Colors.white38),
+              enabledBorder: UnderlineInputBorder(
+                borderSide: BorderSide(color: Colors.white54),
+              ),
+              focusedBorder: UnderlineInputBorder(
+                borderSide: BorderSide(color: Color(0xFF0066FF)),
+              ),
+            ),
+            keyboardType: TextInputType.emailAddress,
+            enabled: !_isInviting,
+          ),
+          const SizedBox(height: 16),
+          if (widget.tier == 'free')
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.info_outline, color: Colors.orange, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Free tier: Max 5 members (${widget.members.length}/5)',
+                      style: const TextStyle(color: Colors.orange, fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: _isInviting ? null : () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _isInviting ? null : () async {
+            final email = widget.emailController.text.trim();
+            if (email.isEmpty) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Please enter an email address')),
+              );
+              return;
+            }
+            
+            if (!email.contains('@') || !email.contains('.')) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Please enter a valid email address')),
+              );
+              return;
+            }
+            
+            setState(() => _isInviting = true);
+            
+            try {
+              final user = await DatabaseService.getUserByEmail(email);
+              
+              if (user == null) {
+                final userId = '${DateTime.now().millisecondsSinceEpoch}_user';
+                final now = DateTime.now().toIso8601String();
+                
+                await DatabaseService.insertUser({
+                  'id': userId,
+                  'name': email.split('@')[0],
+                  'email': email,
+                  'password_hash': null,
+                  'avatar_url': null,
+                  'status': 'offline',
+                  'created_at': now,
+                  'updated_at': now,
+                });
+                
+                await DatabaseService.addWorkspaceMember({
+                  'workspace_id': widget.workspaceId,
+                  'user_id': userId,
+                  'role': 'member',
+                  'joined_at': now,
+                });
+                
+                if (!mounted) return;
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('$email has been added to the workspace'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+                
+                widget.onMemberAdded();
+              } else {
+                final existingMembers = await DatabaseService.getWorkspaceMembers(widget.workspaceId);
+                final isAlreadyMember = existingMembers.any((m) => m['email'] == email);
+                
+                if (isAlreadyMember) {
+                  if (!mounted) return;
+                  setState(() => _isInviting = false);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('User is already a member of this workspace')),
+                  );
+                  return;
+                }
+                
+                final now = DateTime.now().toIso8601String();
+                await DatabaseService.addWorkspaceMember({
+                  'workspace_id': widget.workspaceId,
+                  'user_id': user['id'] as String,
+                  'role': 'member',
+                  'joined_at': now,
+                });
+                
+                if (!mounted) return;
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('${user['name']} has been added to the workspace'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+                
+                widget.onMemberAdded();
+              }
+            } catch (e) {
+              if (!mounted) return;
+              setState(() => _isInviting = false);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Error adding member: $e'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
+          },
+          style: FilledButton.styleFrom(
+            backgroundColor: const Color(0xFF0066FF),
+          ),
+          child: _isInviting
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                )
+              : const Text('Invite'),
+        ),
+      ],
+    );
   }
 }
 

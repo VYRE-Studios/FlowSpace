@@ -1,78 +1,51 @@
-import 'package:jitsi_meet_flutter_sdk/jitsi_meet_flutter_sdk.dart';
-import 'database_service.dart';
-import 'auth_service.dart';
+import 'api_client.dart';
 
 class MeetService {
-  static final JitsiMeet _jitsiMeet = JitsiMeet();
-
-  /// Get all active meetings for a workspace
+  /// Get all active meetings for a workspace from the FlowSpace backend.
   static Future<List<Map<String, dynamic>>> getWorkspaceMeetings(String workspaceId) async {
-    return await DatabaseService.getWorkspaceMeetings(workspaceId);
+    final response = await ApiClient.get(
+      'meet/sessions?workspaceId=${Uri.encodeComponent(workspaceId)}',
+    );
+    final data = response as Map<String, dynamic>;
+    return (data['meetings'] as List<dynamic>? ?? const [])
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList();
   }
 
-  /// Start a new meeting
-  static Future<String> startMeeting({
+  /// Create and immediately start a new backend-backed LiveKit meeting.
+  static Future<Map<String, dynamic>> startMeeting({
     required String workspaceId,
     required String title,
   }) async {
-    final user = await AuthService.getCurrentUser();
-    if (user == null) throw Exception('No user found');
+    final created = await ApiClient.post(
+      'meet',
+      body: {
+        'workspaceId': workspaceId,
+        'title': title,
+      },
+    ) as Map<String, dynamic>;
 
-    final meetingId = DateTime.now().millisecondsSinceEpoch.toString();
-    final roomName = 'flowspace_${workspaceId}_$meetingId';
-    final now = DateTime.now().toIso8601String();
-
-    // Save meeting to database
-    await DatabaseService.insertMeeting({
-      'id': meetingId,
-      'workspace_id': workspaceId,
-      'room_name': roomName,
-      'title': title,
-      'started_by': user['id'],
-      'started_at': now,
-      'status': 'active',
-    });
-
-    // Join the Jitsi room
-    await joinMeeting(
-      roomName: roomName,
-      displayName: user['name'] as String,
-      title: title,
-    );
-
-    return meetingId;
+    final meetingId = created['id'] as String;
+    final started = await ApiClient.post('meet/$meetingId/start');
+    return Map<String, dynamic>.from(started as Map);
   }
 
-  /// Join an existing meeting
-  static Future<void> joinMeeting({
-    required String roomName,
-    required String displayName,
-    String? title,
+  /// Mark the current user as joined and fetch the LiveKit connection payload.
+  ///
+  /// The UI layer still needs a LiveKit room widget to consume this token.
+  static Future<Map<String, dynamic>> joinMeeting({
+    required String meetingId,
   }) async {
-    var options = JitsiMeetConferenceOptions(
-      serverURL: 'https://meet.jit.si',
-      room: roomName,
-      configOverrides: {
-        'startWithAudioMuted': false,
-        'startWithVideoMuted': false,
-        'subject': title ?? 'FlowSpace Meeting',
-      },
-      featureFlags: {
-        'unsaferoomwarning.enabled': false,
-        'prejoinpage.enabled': false,
-      },
-      userInfo: JitsiMeetUserInfo(
-        displayName: displayName,
-        email: '',
-      ),
-    );
-
-    await _jitsiMeet.join(options);
+    await ApiClient.post('meet/$meetingId/join');
+    final tokenPayload = await ApiClient.get('meet/$meetingId/token');
+    return Map<String, dynamic>.from(tokenPayload as Map);
   }
 
-  /// End a meeting
+  static Future<void> leaveMeeting(String meetingId) async {
+    await ApiClient.post('meet/$meetingId/leave');
+  }
+
   static Future<void> endMeeting(String meetingId) async {
-    await DatabaseService.endMeeting(meetingId);
-    // Note: Jitsi doesn't have a server-side "end" - users just leave
+    await ApiClient.post('meet/$meetingId/end');
   }
 }

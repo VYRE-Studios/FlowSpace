@@ -19,9 +19,8 @@ class FlowNavRail extends StatelessWidget {
       {'icon': 'chat', 'label': 'Chat'},
       {'icon': 'meet', 'label': 'Meet'},
       {'icon': 'vault', 'label': 'Vault'},
-      {'icon': 'activity', 'label': 'Activity'},
-      {'icon': 'settings', 'label': 'Workspace Settings'},
-      {'icon': 'profile', 'label': 'Profile'},
+      {'icon': 'calendar', 'label': 'Calendar'},
+      {'icon': 'settings', 'label': 'Settings'},
     ];
 
     return Container(

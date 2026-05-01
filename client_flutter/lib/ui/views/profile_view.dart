@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 
 import '../../services/auth_service.dart';
 import '../../services/user_service.dart';
+import '../../services/database_service.dart';
+import '../onboarding/welcome_screen.dart';
 
 class ProfileView extends StatefulWidget {
   const ProfileView({super.key});
@@ -175,12 +177,7 @@ class _ProfileViewState extends State<ProfileView> {
                     'Sign Out',
                     style: TextStyle(color: Colors.redAccent),
                   ),
-                  onTap: () {
-                    // TODO: Implement sign out
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Sign out not implemented')),
-                    );
-                  },
+                  onTap: () => _showSignOutDialog(),
                 ),
               ],
             ),
@@ -188,6 +185,71 @@ class _ProfileViewState extends State<ProfileView> {
         ),
       ),
     );
+  }
+
+  Future<void> _showSignOutDialog() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Sign Out'),
+        content: const Text('Are you sure you want to sign out?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Sign Out'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await _signOut();
+    }
+  }
+
+  Future<void> _signOut() async {
+    try {
+      // Get user ID before clearing
+      final user = await AuthService.getCurrentUser();
+      final userId = user?['id'] as String?;
+      
+      // Clear local database user data first
+      if (userId != null) {
+        final db = await DatabaseService.database;
+        await db.delete('users', where: 'id = ?', whereArgs: [userId]);
+      }
+      
+      // Call AuthService logout to clear tokens and secure storage
+      await AuthService.logout();
+      
+      if (!mounted) return;
+      
+      // Navigate to welcome screen
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (context) => const WelcomeScreen()),
+        (route) => false, // Remove all previous routes
+      );
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Signed out successfully'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error signing out: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 }
 

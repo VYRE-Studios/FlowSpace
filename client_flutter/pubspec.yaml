@@ -1,8 +1,8 @@
-name: client_flutter
-description: "A new Flutter project."
+name: flo
+description: "FLŌ - Teams. Unified."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
-publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+publish_to: "none" # Remove this line if you wish to publish to pub.dev
 
 # The following defines the version and build number for your application.
 # A version number is three numbers separated by dots, like 1.2.43
@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.0+1
+version: 2.0.0+20251202
 
 environment:
   sdk: ^3.9.2
@@ -43,13 +43,21 @@ dependencies:
   path_provider: ^2.1.5
   path: ^1.9.0
   file_picker: ^10.3.6
-  jitsi_meet_flutter_sdk: ^11.6.0
+  crypto: ^3.0.3
   cryptography: ^2.7.0
   flutter_secure_storage: ^9.2.2
   convert: ^3.1.1
-  package_info_plus: ^9.0.0
+  # package_info_plus: ^5.0.0
   shared_preferences: ^2.3.3
   url_launcher: ^6.3.1
+  flutter_local_notifications: ^17.0.0
+  overlay_support: ^2.1.0
+  audioplayers: ^5.2.0
+  provider: ^6.1.2
+  intl: ^0.19.0
+  flutter_acrylic: ^1.1.4
+  bitsdojo_window: ^0.1.6
+  system_theme: ^3.2.0
 
 dev_dependencies:
   flutter_test:
@@ -61,13 +69,15 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  msix: ^3.16.12
+  squirrel: any
+  flutter_launcher_icons: any
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
 
 # The following section is specific to Flutter packages.
 flutter:
-
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in
   # the material Icons class.
@@ -76,7 +86,13 @@ flutter:
   # To add assets to your application, add an assets section, like this:
   assets:
     - assets/icons/
-    - assets/images/
+    - assets/sounds/
+    - assets/build_info.json
+
+flutter_icons:
+  windows: true
+  image_path: "assets/icons/app_icon.png"
+  remove_alpha: false
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
@@ -103,3 +119,19 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+msix_config:
+  display_name: FlowSpace
+  publisher_display_name: FlowSpace
+  identity_name: FlowSpace.App
+  msix_version: 1.2.0.0
+  publisher: CN=FlowSpace
+  install_certificate: true
+
+squirrel:
+  windows:
+    app_name: "FLO"
+    app_executable: "client_flutter.exe"
+    icon_path: "windows/runner/resources/app_icon.ico"
+    company_name: "VyreVault Studios"
+    output_path: "build/squirrel"

@@ -3,11 +3,24 @@ import 'package:flutter/material.dart';
 import '../../services/database_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/workspace_service.dart';
+import '../../services/project_templates_service.dart' as pt;
+import 'package:provider/provider.dart';
+import '../../services/api_client.dart';
+import '../../state/project_state.dart';
 
 class ProjectsView extends StatefulWidget {
   final String? workspaceId;
-  
-  const ProjectsView({super.key, this.workspaceId});
+  final Map<String, dynamic>? openProject;
+  final Function(Map<String, dynamic>)? onProjectOpen;
+  final Function(String)? onProjectClose;
+
+  const ProjectsView({
+    super.key,
+    this.workspaceId,
+    this.openProject,
+    this.onProjectOpen,
+    this.onProjectClose,
+  });
 
   @override
   State<ProjectsView> createState() => _ProjectsViewState();
@@ -32,7 +45,7 @@ class _ProjectsViewState extends State<ProjectsView> {
   // Track last load time to avoid excessive reloads
   DateTime? _lastLoadTime;
   String? _lastWorkspaceId;
-  
+
   @override
   void initState() {
     super.initState();
@@ -54,7 +67,8 @@ class _ProjectsViewState extends State<ProjectsView> {
   void didUpdateWidget(ProjectsView oldWidget) {
     super.didUpdateWidget(oldWidget);
     // Reload when workspace ID changes
-    if (widget.workspaceId != oldWidget.workspaceId && widget.workspaceId != null) {
+    if (widget.workspaceId != oldWidget.workspaceId &&
+        widget.workspaceId != null) {
       _lastWorkspaceId = widget.workspaceId;
       _loadProjects();
     }
@@ -65,7 +79,9 @@ class _ProjectsViewState extends State<ProjectsView> {
     super.didChangeDependencies();
     // Only reload if workspace actually changed AND we don't have data for it
     if (widget.workspaceId != _lastWorkspaceId) {
-      print('Projects: Workspace changed from $_lastWorkspaceId to ${widget.workspaceId}');
+      print(
+        'Projects: Workspace changed from $_lastWorkspaceId to ${widget.workspaceId}',
+      );
       _lastWorkspaceId = widget.workspaceId;
       // Only reload if we don't have projects or the workspace ID doesn't match
       if (_projects.isEmpty || _workspaceId != widget.workspaceId) {
@@ -105,14 +121,14 @@ class _ProjectsViewState extends State<ProjectsView> {
       print('Projects: Already loading, skipping...');
       return; // Prevent concurrent loads
     }
-    
+
     print('Projects: Starting load...');
     setState(() => _loading = true);
-    
+
     try {
       String? workspaceId = widget.workspaceId;
       print('Projects: WorkspaceId from widget: $workspaceId');
-      
+
       // If workspaceId not provided, get current workspace
       if (workspaceId == null || workspaceId.isEmpty) {
         print('Projects: No workspaceId, fetching user workspaces...');
@@ -129,8 +145,10 @@ class _ProjectsViewState extends State<ProjectsView> {
           });
           return;
         }
-        
-        var workspaces = await DatabaseService.getUserWorkspaces(user['id'] as String);
+
+        var workspaces = await DatabaseService.getUserWorkspaces(
+          user['id'] as String,
+        );
         print('Projects: Found ${workspaces.length} workspaces');
         if (workspaces.isEmpty) {
           print('Projects: No workspaces found - creating default workspace');
@@ -144,8 +162,12 @@ class _ProjectsViewState extends State<ProjectsView> {
             workspaceId = defaultWorkspace['id'] as String?;
             print('Projects: Created default workspace: $workspaceId');
             // Reload workspaces to get the new one
-            workspaces = await DatabaseService.getUserWorkspaces(user['id'] as String);
-            print('Projects: After creation, found ${workspaces.length} workspaces');
+            workspaces = await DatabaseService.getUserWorkspaces(
+              user['id'] as String,
+            );
+            print(
+              'Projects: After creation, found ${workspaces.length} workspaces',
+            );
           } catch (e) {
             print('Projects: Error creating default workspace: $e');
             // Continue without workspace - we'll handle this in create project dialog
@@ -160,15 +182,19 @@ class _ProjectsViewState extends State<ProjectsView> {
             return;
           }
         }
-        
+
         // Get the most recently updated workspace (likely the current one)
         if (workspaces.isNotEmpty) {
           final workspace = workspaces.reduce((a, b) {
-            final aUpdated = DateTime.tryParse(a['updated_at'] as String? ?? '') ?? DateTime(1970);
-            final bUpdated = DateTime.tryParse(b['updated_at'] as String? ?? '') ?? DateTime(1970);
+            final aUpdated =
+                DateTime.tryParse(a['updated_at'] as String? ?? '') ??
+                DateTime(1970);
+            final bUpdated =
+                DateTime.tryParse(b['updated_at'] as String? ?? '') ??
+                DateTime(1970);
             return bUpdated.isAfter(aUpdated) ? b : a;
           });
-          
+
           workspaceId = workspace['id'] as String?;
         } else if (workspaceId == null) {
           // Still no workspace after creation attempt
@@ -197,7 +223,7 @@ class _ProjectsViewState extends State<ProjectsView> {
           return;
         }
       }
-      
+
       // Ensure we have a valid workspaceId before querying
       if (workspaceId == null || workspaceId.isEmpty) {
         print('Projects: Invalid workspaceId, aborting');
@@ -211,26 +237,27 @@ class _ProjectsViewState extends State<ProjectsView> {
         });
         return;
       }
-      
+
       print('Projects: Loading projects for workspace: $workspaceId');
-      final projects = await DatabaseService.getWorkspaceProjects(workspaceId).timeout(
-        const Duration(seconds: 5),
-        onTimeout: () {
-          print('Projects: Timeout loading projects');
-          return <Map<String, dynamic>>[];
-        },
+      // Fetch projects from backend API
+      final apiProjects = await ApiClient.get('/projects/workspace/$workspaceId').timeout(
+        const Duration(seconds: 15),
       );
+      final projects = (apiProjects as List<dynamic>).map<Map<String, dynamic>>((p) => p as Map<String, dynamic>).toList();
       
       print('Projects: Loaded ${projects.length} projects for workspace $workspaceId');
+      print(
+        'Projects: Loaded ${projects.length} projects for workspace $workspaceId',
+      );
       for (final project in projects) {
         print('Projects: - ${project['name']} (${project['id']})');
       }
-      
+
       if (!mounted) {
         print('Projects: Widget not mounted, aborting');
         return;
       }
-      
+
       setState(() {
         _workspaceId = workspaceId;
         _projects = projects;
@@ -240,13 +267,19 @@ class _ProjectsViewState extends State<ProjectsView> {
         _lastLoadTime = DateTime.now();
       });
       
-      print('Projects: State updated, loading tasks...');
+      print('Projects: State updated, loading tasks + opening project...');
       
-      // Load tasks for selected project (don't await - let it load in background)
+      // Auto-open the first project and render its background module
       if (_selectedProject != null && _selectedProject!['id'] != null) {
-        _loadTasks(_selectedProject!['id'] as String).catchError((e) {
+        final projectId = _selectedProject!['id'] as String;
+        // Load project into global state so the shell renders the module overlay
+        await context.read<ProjectState>().loadProject(projectId);
+        // Load tasks in the background
+        _loadTasks(projectId).catchError((e) {
           print('Projects: Error loading tasks: $e');
         });
+        // Notify parent callback
+        widget.onProjectOpen?.call(_selectedProject!);
       } else {
         // Clear tasks if no project selected
         if (mounted) {
@@ -286,12 +319,12 @@ class _ProjectsViewState extends State<ProjectsView> {
   Future<void> _loadTasks(String projectId) async {
     try {
       final tasksByStatus = <String, List<Map<String, dynamic>>>{};
-      
+
       for (final status in _statuses) {
         final tasks = await DatabaseService.getTasksByStatus(projectId, status);
         tasksByStatus[status] = tasks;
       }
-      
+
       if (!mounted) return;
       setState(() {
         _tasksByStatus = tasksByStatus;
@@ -319,7 +352,7 @@ class _ProjectsViewState extends State<ProjectsView> {
           }
         });
       }
-      
+
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -350,9 +383,16 @@ class _ProjectsViewState extends State<ProjectsView> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.dashboard_outlined, size: 64, color: Colors.white38),
+            const Icon(
+              Icons.dashboard_outlined,
+              size: 64,
+              color: Colors.white38,
+            ),
             const SizedBox(height: 16),
-            const Text('No projects yet', style: TextStyle(color: Colors.white70)),
+            const Text(
+              'No projects yet',
+              style: TextStyle(color: Colors.white70),
+            ),
             const SizedBox(height: 24),
             FilledButton.icon(
               onPressed: () {
@@ -392,7 +432,11 @@ class _ProjectsViewState extends State<ProjectsView> {
             child: DropdownButton<String>(
               value: _selectedProject?['id'],
               dropdownColor: const Color(0xFF1E1E1E),
-              style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+              ),
               underline: Container(),
               items: _projects.map((project) {
                 return DropdownMenuItem(
@@ -400,10 +444,16 @@ class _ProjectsViewState extends State<ProjectsView> {
                   child: Text(project['name'] as String),
                 );
               }).toList(),
-              onChanged: (projectId) {
+              onChanged: (projectId) async {
+                if (projectId == null) return;
                 final project = _projects.firstWhere((p) => p['id'] == projectId);
                 setState(() => _selectedProject = project);
-                _loadTasks(projectId!);
+                // Load project into global state to activate background module
+                await context.read<ProjectState>().loadProject(projectId);
+                // Load tasks
+                _loadTasks(projectId);
+                // Notify parent
+                widget.onProjectOpen?.call(project);
               },
             ),
           ),
@@ -451,7 +501,9 @@ class _ProjectsViewState extends State<ProjectsView> {
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: const BoxDecoration(
-                    border: Border(bottom: BorderSide(color: Color(0x22FFFFFF))),
+                    border: Border(
+                      bottom: BorderSide(color: Color(0x22FFFFFF)),
+                    ),
                   ),
                   child: Row(
                     children: [
@@ -466,14 +518,20 @@ class _ProjectsViewState extends State<ProjectsView> {
                         ),
                       ),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: const Color(0xFF0066FF).withValues(alpha: 0.2),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Text(
                           '${tasks.length}',
-                          style: const TextStyle(color: Color(0xFF0066FF), fontSize: 12),
+                          style: const TextStyle(
+                            color: Color(0xFF0066FF),
+                            fontSize: 12,
+                          ),
                         ),
                       ),
                     ],
@@ -504,8 +562,8 @@ class _ProjectsViewState extends State<ProjectsView> {
     final priorityColor = priority == 'high'
         ? Colors.red
         : priority == 'low'
-            ? Colors.green
-            : Colors.orange;
+        ? Colors.green
+        : Colors.orange;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -542,14 +600,18 @@ class _ProjectsViewState extends State<ProjectsView> {
                     ),
                   ],
                 ),
-                if (task['description'] != null && (task['description'] as String).isNotEmpty)
+                if (task['description'] != null &&
+                    (task['description'] as String).isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: 8),
                     child: Text(
                       task['description'] as String,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: Colors.white54, fontSize: 12),
+                      style: const TextStyle(
+                        color: Colors.white54,
+                        fontSize: 12,
+                      ),
                     ),
                   ),
                 if (task['due_date'] != null)
@@ -557,11 +619,18 @@ class _ProjectsViewState extends State<ProjectsView> {
                     padding: const EdgeInsets.only(top: 8),
                     child: Row(
                       children: [
-                        const Icon(Icons.calendar_today, size: 12, color: Colors.white38),
+                        const Icon(
+                          Icons.calendar_today,
+                          size: 12,
+                          color: Colors.white38,
+                        ),
                         const SizedBox(width: 4),
                         Text(
                           _formatDate(task['due_date'] as String),
-                          style: const TextStyle(color: Colors.white38, fontSize: 11),
+                          style: const TextStyle(
+                            color: Colors.white38,
+                            fontSize: 11,
+                          ),
                         ),
                       ],
                     ),
@@ -583,7 +652,10 @@ class _ProjectsViewState extends State<ProjectsView> {
         child: Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            border: Border.all(color: Colors.white.withValues(alpha: 0.1), style: BorderStyle.solid),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.1),
+              style: BorderStyle.solid,
+            ),
             borderRadius: BorderRadius.circular(8),
           ),
           child: const Row(
@@ -591,7 +663,10 @@ class _ProjectsViewState extends State<ProjectsView> {
             children: [
               Icon(Icons.add, size: 16, color: Colors.white38),
               SizedBox(width: 8),
-              Text('Add task', style: TextStyle(color: Colors.white38, fontSize: 12)),
+              Text(
+                'Add task',
+                style: TextStyle(color: Colors.white38, fontSize: 12),
+              ),
             ],
           ),
         ),
@@ -605,131 +680,426 @@ class _ProjectsViewState extends State<ProjectsView> {
     return '${date.month}/${date.day}';
   }
 
-  void _showCreateProjectDialog() {
+  void _showCreateProjectDialog() async {
     final nameController = TextEditingController();
     final descController = TextEditingController();
+    pt.ProjectTemplate? selectedTemplate;
+
+    // Load templates
+    final templates = await pt.ProjectTemplatesService.getTemplates();
+    selectedTemplate = templates.firstWhere(
+      (t) => t.id == 'blank',
+      orElse: () => templates.first,
+    );
+
+    if (!mounted) return;
+
+    // Get example descriptions for each template
+    final templateExamples = {
+      'brainstorming-whiteboard':
+          'Perfect for: Idea generation, concept development, visual thinking',
+      'workflow-automation':
+          'Perfect for: Building tools like a9n/n8n, automation platforms, node-based systems',
+      'game-engine-ai':
+          'Perfect for: VyreVault 6, Unreal Engine forks, AI-integrated game engines',
+      'story-building-software':
+          'Perfect for: CreativeOS, writing tools, narrative development software',
+      'software-development':
+          'Perfect for: General software projects, web apps, APIs, services',
+      'product-launch':
+          'Perfect for: Launching new products, features, or services',
+      'research-project':
+          'Perfect for: Technical research, experiments, proof-of-concepts',
+      'blank':
+          'Perfect for: Custom projects, undefined workflows, starting from scratch',
+    };
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1E1E1E),
-        title: const Text('Create Project', style: TextStyle(color: Colors.white)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameController,
-              style: const TextStyle(color: Colors.white),
-              decoration: const InputDecoration(
-                labelText: 'Project Name',
-                labelStyle: TextStyle(color: Colors.white70),
-                enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white54)),
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: descController,
-              style: const TextStyle(color: Colors.white),
-              maxLines: 2,
-              decoration: const InputDecoration(
-                labelText: 'Description',
-                labelStyle: TextStyle(color: Colors.white70),
-                enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white54)),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              if (nameController.text.trim().isEmpty) return;
-              Navigator.pop(context);
-              
-              final user = await AuthService.getCurrentUser();
-              if (user == null) return;
-              
-              final projectId = DateTime.now().millisecondsSinceEpoch.toString();
-              final now = DateTime.now().toIso8601String();
-              
-              // Ensure we have a workspace ID - auto-create if needed
-              String? workspaceId = _workspaceId ?? widget.workspaceId;
-              if (workspaceId == null || workspaceId.isEmpty) {
-                // Try to get workspace ID again
-                var workspaces = await DatabaseService.getUserWorkspaces(user['id'] as String);
-                if (workspaces.isNotEmpty) {
-                  final workspace = workspaces.reduce((a, b) {
-                    final aUpdated = DateTime.tryParse(a['updated_at'] as String? ?? '') ?? DateTime(1970);
-                    final bUpdated = DateTime.tryParse(b['updated_at'] as String? ?? '') ?? DateTime(1970);
-                    return bUpdated.isAfter(aUpdated) ? b : a;
-                  });
-                  workspaceId = workspace['id'] as String?;
-                } else {
-                  // Auto-create a workspace if none exists
-                  try {
-                    final defaultWorkspace = await WorkspaceService.createWorkspace(
-                      name: 'General',
-                      description: 'General workspace for team collaboration',
-                      workspaceType: 'project',
-                    );
-                    workspaceId = defaultWorkspace['id'] as String?;
-                    print('Projects: Created workspace for project: $workspaceId');
-                    // Update local state
-                    if (mounted) {
-                      setState(() {
-                        _workspaceId = workspaceId;
-                      });
-                    }
-                  } catch (e) {
-                    print('Projects: Error creating workspace: $e');
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Error creating workspace: $e'),
-                          backgroundColor: Colors.red,
-                        ),
-                      );
-                    }
-                    return;
-                  }
-                }
-              }
-              
-              if (workspaceId == null || workspaceId.isEmpty) {
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Unable to create workspace. Please try again.'),
-                      backgroundColor: Colors.red,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => Dialog(
+          backgroundColor: const Color(0xFF1E1E1E),
+          child: Container(
+            width: MediaQuery.of(context).size.width * 0.9,
+            constraints: const BoxConstraints(maxWidth: 800, maxHeight: 700),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: const BoxDecoration(
+                    border: Border(
+                      bottom: BorderSide(color: Color(0x22FFFFFF)),
                     ),
-                  );
-                }
-                return;
-              }
-              
-              await DatabaseService.insertProject({
-                'id': projectId,
-                'workspace_id': workspaceId,
-                'name': nameController.text.trim(),
-                'description': descController.text.trim(),
-                'status': 'active',
-                'created_by': user['id'],
-                'created_at': now,
-                'updated_at': now,
-              });
-              
-              // Reload projects immediately after creation
-              if (mounted) {
-                await _loadProjects();
-              }
-            },
-            style: FilledButton.styleFrom(backgroundColor: const Color(0xFF0066FF)),
-            child: const Text('Create'),
+                  ),
+                  child: Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Create New Project',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.close, color: Colors.white70),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Choose a Project Template',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Select a template to get started with pre-configured tasks and structure',
+                          style: TextStyle(color: Colors.white70, fontSize: 14),
+                        ),
+                        const SizedBox(height: 24),
+                        // Template grid
+                        GridView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 2,
+                                childAspectRatio: 1.4,
+                                crossAxisSpacing: 16,
+                                mainAxisSpacing: 16,
+                              ),
+                          itemCount: templates.length,
+                          itemBuilder: (context, index) {
+                            final template = templates[index];
+                            final isSelected =
+                                selectedTemplate?.id == template.id;
+                            final example = templateExamples[template.id] ?? '';
+                            return InkWell(
+                              onTap: () {
+                                setDialogState(() {
+                                  selectedTemplate = template;
+                                  descController.text = template.description;
+                                });
+                              },
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: isSelected
+                                      ? const Color(
+                                          0xFF0066FF,
+                                        ).withValues(alpha: 0.15)
+                                      : Colors.white.withValues(alpha: 0.05),
+                                  border: Border.all(
+                                    color: isSelected
+                                        ? const Color(0xFF0066FF)
+                                        : Colors.white.withValues(alpha: 0.1),
+                                    width: isSelected ? 2.5 : 1,
+                                  ),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                padding: const EdgeInsets.all(16),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Text(
+                                          template.icon,
+                                          style: const TextStyle(fontSize: 24),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Text(
+                                            template.name,
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: isSelected
+                                                  ? FontWeight.w700
+                                                  : FontWeight.w600,
+                                              fontSize: 16,
+                                            ),
+                                          ),
+                                        ),
+                                        if (isSelected)
+                                          const Icon(
+                                            Icons.check_circle,
+                                            color: Color(0xFF0066FF),
+                                            size: 20,
+                                          ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      template.description,
+                                      style: const TextStyle(
+                                        color: Colors.white70,
+                                        fontSize: 12,
+                                      ),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    if (example.isNotEmpty) ...[
+                                      const SizedBox(height: 8),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 4,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withValues(
+                                            alpha: 0.05,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            6,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          example,
+                                          style: TextStyle(
+                                            color: Colors.white.withValues(
+                                              alpha: 0.7,
+                                            ),
+                                            fontSize: 10,
+                                            fontStyle: FontStyle.italic,
+                                          ),
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                    if (template.defaultTasks.isNotEmpty) ...[
+                                      const SizedBox(height: 8),
+                                      Row(
+                                        children: [
+                                          Icon(
+                                            Icons.task_alt,
+                                            size: 12,
+                                            color: Colors.white.withValues(
+                                              alpha: 0.5,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            '${template.defaultTasks.length} default tasks',
+                                            style: TextStyle(
+                                              color: Colors.white.withValues(
+                                                alpha: 0.5,
+                                              ),
+                                              fontSize: 10,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 24),
+                        // Project details section
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.05),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.1),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Project Details',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              TextField(
+                                controller: nameController,
+                                style: const TextStyle(color: Colors.white),
+                                decoration: const InputDecoration(
+                                  labelText: 'Project Name *',
+                                  labelStyle: TextStyle(color: Colors.white70),
+                                  enabledBorder: UnderlineInputBorder(
+                                    borderSide: BorderSide(
+                                      color: Colors.white54,
+                                    ),
+                                  ),
+                                  focusedBorder: UnderlineInputBorder(
+                                    borderSide: BorderSide(
+                                      color: Color(0xFF0066FF),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              TextField(
+                                controller: descController,
+                                style: const TextStyle(color: Colors.white),
+                                maxLines: 3,
+                                decoration: InputDecoration(
+                                  labelText: 'Description',
+                                  labelStyle: const TextStyle(
+                                    color: Colors.white70,
+                                  ),
+                                  hintText:
+                                      selectedTemplate?.description ??
+                                      'Project description',
+                                  hintStyle: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.3),
+                                  ),
+                                  enabledBorder: const UnderlineInputBorder(
+                                    borderSide: BorderSide(
+                                      color: Colors.white54,
+                                    ),
+                                  ),
+                                  focusedBorder: const UnderlineInputBorder(
+                                    borderSide: BorderSide(
+                                      color: Color(0xFF0066FF),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              if (selectedTemplate != null &&
+                                  (selectedTemplate?.defaultTasks.isNotEmpty ??
+                                      false)) ...[
+                                const SizedBox(height: 16),
+                                Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: const Color(
+                                      0xFF0066FF,
+                                    ).withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      const Icon(
+                                        Icons.info_outline,
+                                        color: Color(0xFF0066FF),
+                                        size: 20,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          'This template will create ${selectedTemplate?.defaultTasks.length ?? 0} default tasks to get you started',
+                                          style: const TextStyle(
+                                            color: Color(0xFF0066FF),
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: const BoxDecoration(
+                    border: Border(top: BorderSide(color: Color(0x22FFFFFF))),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text(
+                          'Cancel',
+                          style: TextStyle(color: Colors.white70),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      FilledButton(
+                        onPressed: () async {
+                          if (nameController.text.trim().isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Please enter a project name'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                            return;
+                          }
+                          Navigator.pop(context);
+
+                          final user = await AuthService.getCurrentUser();
+                          if (user == null) return;
+
+                          // Create project via backend API
+                          try {
+                            final createRes = await ApiClient.post(
+                              '/projects/create',
+                              body: {
+                                'name': nameController.text.trim(),
+                                'templateId': selectedTemplate?.id ?? 'blank',
+                              },
+                            );
+
+                            final createdProjectId =
+                                createRes['projectId'] as String;
+
+                            // Load full project into global ProjectState
+                            if (mounted) {
+                              await context.read<ProjectState>().loadProject(
+                                createdProjectId,
+                              );
+                            }
+
+                            // Refresh local list UI
+                            if (mounted) {
+                              await _loadProjects();
+                            }
+                          } catch (e) {
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Failed to create project: $e'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                          }
+                        },
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFF0066FF),
+                        ),
+                        child: const Text('Create Project'),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -744,7 +1114,10 @@ class _ProjectsViewState extends State<ProjectsView> {
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           backgroundColor: const Color(0xFF1E1E1E),
-          title: const Text('Create Task', style: TextStyle(color: Colors.white)),
+          title: const Text(
+            'Create Task',
+            style: TextStyle(color: Colors.white),
+          ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -754,7 +1127,9 @@ class _ProjectsViewState extends State<ProjectsView> {
                 decoration: const InputDecoration(
                   labelText: 'Task Title',
                   labelStyle: TextStyle(color: Colors.white70),
-                  enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white54)),
+                  enabledBorder: UnderlineInputBorder(
+                    borderSide: BorderSide(color: Colors.white54),
+                  ),
                 ),
               ),
               const SizedBox(height: 16),
@@ -765,7 +1140,9 @@ class _ProjectsViewState extends State<ProjectsView> {
                 decoration: const InputDecoration(
                   labelText: 'Description',
                   labelStyle: TextStyle(color: Colors.white70),
-                  enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white54)),
+                  enabledBorder: UnderlineInputBorder(
+                    borderSide: BorderSide(color: Colors.white54),
+                  ),
                 ),
               ),
               const SizedBox(height: 16),
@@ -776,7 +1153,9 @@ class _ProjectsViewState extends State<ProjectsView> {
                 decoration: const InputDecoration(
                   labelText: 'Priority',
                   labelStyle: TextStyle(color: Colors.white70),
-                  enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white54)),
+                  enabledBorder: UnderlineInputBorder(
+                    borderSide: BorderSide(color: Colors.white54),
+                  ),
                 ),
                 items: const [
                   DropdownMenuItem(value: 'low', child: Text('Low')),
@@ -796,13 +1175,13 @@ class _ProjectsViewState extends State<ProjectsView> {
               onPressed: () async {
                 if (titleController.text.trim().isEmpty) return;
                 Navigator.pop(context);
-                
+
                 final user = await AuthService.getCurrentUser();
                 if (user == null) return;
-                
+
                 final taskId = DateTime.now().millisecondsSinceEpoch.toString();
                 final now = DateTime.now().toIso8601String();
-                
+
                 await DatabaseService.insertTask({
                   'id': taskId,
                   'project_id': _selectedProject!['id'],
@@ -817,10 +1196,12 @@ class _ProjectsViewState extends State<ProjectsView> {
                   'created_at': now,
                   'updated_at': now,
                 });
-                
+
                 _loadTasks(_selectedProject!['id'] as String);
               },
-              style: FilledButton.styleFrom(backgroundColor: const Color(0xFF0066FF)),
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF0066FF),
+              ),
               child: const Text('Create'),
             ),
           ],
@@ -834,7 +1215,10 @@ class _ProjectsViewState extends State<ProjectsView> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF1E1E1E),
-        title: Text(task['title'] as String, style: const TextStyle(color: Colors.white)),
+        title: Text(
+          task['title'] as String,
+          style: const TextStyle(color: Colors.white),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,

@@ -1,5 +1,7 @@
-import 'package:client_flutter/services/p2p/p2p_manager.dart';
-import 'p2p_test_harness.dart';
+// @Skip('Legacy test disabled pending full rewrite')
+// Legacy P2P test main - disabled
+// import 'package:client_flutter/services/p2p/p2p_manager.dart';
+// import 'p2p_test_harness.dart';
 
 /// Simple console application for testing P2P functionality
 /// 

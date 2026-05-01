@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/theme/flo_theme.dart';
 import '../../services/auth_service.dart';
+import 'email_verification_screen.dart';
 import 'setup_complete_screen.dart';
 
 class SetupUserScreen extends StatefulWidget {
@@ -38,6 +39,7 @@ class _SetupUserScreenState extends State<SetupUserScreen> {
     });
 
     try {
+      // Use simple registration (no email verification)
       await AuthService.register(
         name: _nameController.text.trim(),
         email: _emailController.text.trim(),

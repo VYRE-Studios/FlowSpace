@@ -1,10 +1,11 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../../services/meet_service.dart';
-import '../../services/auth_service.dart';
-import '../../services/database_service.dart';
+import '../../services/workspace_service.dart';
+import '../../state/active_workspace_state.dart';
 
 enum _MeetState { idle, loading, active }
 
@@ -30,22 +31,12 @@ class _MeetViewState extends State<MeetView> {
     setState(() => _state = _MeetState.loading);
     try {
       // Get current user and their workspace
-      final user = await AuthService.getCurrentUser();
-      if (user == null) {
+      final workspaceId = await _resolveWorkspaceId();
+      if (workspaceId == null) {
         if (!mounted) return;
         setState(() => _state = _MeetState.idle);
         return;
       }
-
-      final workspaces = await DatabaseService.getUserWorkspaces(user['id'] as String);
-      if (workspaces.isEmpty) {
-        if (!mounted) return;
-        setState(() => _state = _MeetState.idle);
-        return;
-      }
-
-      final workspace = workspaces.first;
-      final workspaceId = workspace['id'] as String;
 
       // Load active meetings
       final meetings = await MeetService.getWorkspaceMeetings(workspaceId);
@@ -61,6 +52,23 @@ class _MeetViewState extends State<MeetView> {
       if (!mounted) return;
       setState(() => _state = _MeetState.idle);
     }
+  }
+
+  Future<String?> _resolveWorkspaceId() async {
+    if (_workspaceId != null) return _workspaceId;
+
+    final activeWorkspace = context.read<ActiveWorkspaceState>();
+    if (activeWorkspace.activeWorkspaceId != null) {
+      return activeWorkspace.activeWorkspaceId;
+    }
+
+    final bootstrap = await WorkspaceService.getWorkspaceBootstrap();
+    final workspaces = bootstrap['workspaces'] as List? ?? const [];
+    if (workspaces.isEmpty) return null;
+
+    final workspace = Map<String, dynamic>.from(workspaces.first as Map);
+    activeWorkspace.setActiveWorkspace(workspace);
+    return workspace['id'] as String?;
   }
 
   @override
@@ -93,8 +101,10 @@ class _MeetViewState extends State<MeetView> {
         itemBuilder: (context, i) {
           final meeting = _meetings[i];
           final title = meeting['title'] as String? ?? 'Meeting ${i + 1}';
-          final roomName = meeting['room_name'] as String? ?? '';
-          final startedAt = meeting['started_at'] as String?;
+          final meetingId = meeting['id'] as String;
+          final roomName = meeting['roomId'] as String? ?? '';
+          final startedAt = meeting['startedAt']?.toString();
+          final participants = meeting['participants'] as int? ?? 0;
 
           return ClipRRect(
             borderRadius: BorderRadius.circular(20),
@@ -153,18 +163,28 @@ class _MeetViewState extends State<MeetView> {
                           ),
                         ),
                       ),
+                    const SizedBox(height: 6),
+                    Text(
+                      '$participants participant${participants == 1 ? '' : 's'}',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.5),
+                        fontSize: 11,
+                      ),
+                    ),
                     const Spacer(),
                     Align(
                       alignment: Alignment.bottomRight,
                       child: OutlinedButton(
                         onPressed: () async {
                           try {
-                            final user = await AuthService.getCurrentUser();
                             await MeetService.joinMeeting(
-                              roomName: roomName,
-                              displayName: user?['name'] as String? ?? 'User',
-                              title: title,
+                              meetingId: meetingId,
                             );
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('LiveKit token ready for $roomName')),
+                              );
+                            }
                           } catch (e) {
                             if (context.mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
@@ -294,13 +314,13 @@ class _MeetViewState extends State<MeetView> {
               Navigator.pop(context);
 
               try {
-                await MeetService.startMeeting(
+                final meeting = await MeetService.startMeeting(
                   workspaceId: _workspaceId!,
                   title: title,
                 );
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Meeting started!')),
+                    SnackBar(content: Text('Meeting started: ${meeting['title'] ?? title}')),
                   );
                   _loadWorkspaceAndMeetings();
                 }

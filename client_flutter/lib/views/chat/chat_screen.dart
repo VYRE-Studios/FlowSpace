@@ -18,202 +18,47 @@ class _ChatScreenState extends State<ChatScreen> {
 
   bool _loading = true;
   bool _error = false;
-  List<ChatThread> _threads = const [];
-  ChatThread? _selectedThread;
+  // List<ChatThread> _threads = const []; // Legacy ChatThread model disabled
+  // ChatThread? _selectedThread; // Legacy ChatThread model disabled
 
   @override
   void initState() {
     super.initState();
-    _loadThreads();
+    // _loadThreads(); // Legacy method disabled
+    setState(() => _loading = false);
   }
 
-  Future<void> _loadThreads() async {
-    setState(() {
-      _loading = true;
-      _error = false;
-    });
+  // Legacy ChatService methods not available - disabled
+  // Future<void> _loadThreads() async { ... }
 
-    try {
-      final data = await ChatService.getThreads();
-      if (!mounted) return;
-
-      setState(() {
-        _threads = data;
-        _selectedThread =
-            data.isEmpty ? null : data.firstWhere((t) => t.id == _selectedThread?.id, orElse: () => data.first);
-        _loading = false;
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _error = true;
-        _loading = false;
-      });
-    }
-  }
-
+  // Legacy ChatService.createThread() not available - disabled
   Future<void> _createThread() async {
-    final controller = TextEditingController();
-    final title = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('New Channel'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(
-            labelText: 'Channel name',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
-            child: const Text('Create'),
-          ),
-        ],
-      ),
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Legacy chat feature disabled - use ChatView instead')),
     );
-
-    if (title == null || title.isEmpty) return;
-
-    try {
-      await ChatService.createThread(title);
-      await _loadThreads();
-      if (_threads.isNotEmpty) {
-        setState(() {
-          _selectedThread = _threads.first;
-        });
-      }
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Unable to create channel')),
-      );
-    }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    if (_error) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.error_outline, color: Colors.redAccent),
-            const SizedBox(height: 12),
-            const Text('Unable to load channels'),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: _loadThreads,
-              child: const Text('Retry'),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return Row(
-      children: [
-        Container(
-          width: 320,
-          decoration: const BoxDecoration(
-            color: Color(0xFF111111),
-            border: Border(right: BorderSide(color: Color(0x22FFFFFF))),
+    // Legacy ChatThread model not available - show placeholder
+    return const Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.info_outline, size: 64, color: Colors.white54),
+          SizedBox(height: 24),
+          Text(
+            'Legacy Chat Screen Disabled',
+            style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
           ),
-          child: Column(
-            children: [
-              ListTile(
-                title: const Text(
-                  'Channels',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                trailing: IconButton(
-                  tooltip: 'New channel',
-                  icon: const Icon(Icons.add, color: Colors.white),
-                  onPressed: _createThread,
-                ),
-              ),
-              Expanded(
-                child: _threads.isEmpty
-                    ? const Center(
-                        child: Text(
-                          'No channels yet.\nCreate one to get started.',
-                          style: TextStyle(color: Colors.white54),
-                          textAlign: TextAlign.center,
-                        ),
-                      )
-                    : ListView.builder(
-                        itemCount: _threads.length,
-                        itemBuilder: (context, index) {
-                          final thread = _threads[index];
-                          final selected = thread.id == _selectedThread?.id;
-
-                          return ListTile(
-                            selected: selected,
-                            selectedTileColor:
-                                const Color(0xFF0066FF).withOpacity(0.15),
-                            leading: const Icon(
-                              Icons.chat_bubble_outline,
-                              color: Colors.white70,
-                              size: 18,
-                            ),
-                            title: Text(
-                              thread.title,
-                              style: TextStyle(
-                                color: selected
-                                    ? Colors.white
-                                    : Colors.white.withOpacity(0.85),
-                                fontWeight:
-                                    selected ? FontWeight.w600 : FontWeight.w500,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            subtitle: (thread.lastMessage ?? '').isEmpty
-                                ? null
-                                : Text(
-                                    thread.lastMessage!,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      color: Colors.white54,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                            onTap: () {
-                              setState(() => _selectedThread = thread);
-                            },
-                          );
-                        },
-                      ),
-              ),
-            ],
+          SizedBox(height: 12),
+          Text(
+            'This view requires the legacy ChatThread model.\nUse the ChatView in the main navigation instead.',
+            style: TextStyle(color: Colors.white70, fontSize: 14),
+            textAlign: TextAlign.center,
           ),
-        ),
-        Expanded(
-          child: _selectedThread == null
-              ? const Center(
-                  child: Text(
-                    'Select or create a channel to start chatting.',
-                    style: TextStyle(color: Colors.white70),
-                  ),
-                )
-              : ChatView(
-                  threadId: _selectedThread!.id,
-                  username: _username,
-                ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
