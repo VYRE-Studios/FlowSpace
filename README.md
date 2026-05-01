@@ -56,6 +56,14 @@ GET /api/v1/health
 
 That health endpoint now exists in the backend. Full hosted workspace/message/file sync is still the next implementation pass, but the client now has the configuration and readiness path needed for the self-hosted server rollout.
 
+## Roadmap To Green
+
+The full system plan is tracked in:
+
+[FlowSpace All Systems Green Plan](docs/FLOWSPACE_ALL_SYSTEMS_GREEN_PLAN.md)
+
+It covers the dashboard status for backend build, Flutter, Android, app boot, auth, workspace, streams, realtime, Connect, Vault, presence, notifications, projects, search, admin, and release readiness.
+
 ## Screenshots
 
 ### Workspace Home
