@@ -107,6 +107,22 @@ The Windows debug executable is created under:
 client_flutter/build/windows/x64/runner/Debug/client_flutter.exe
 ```
 
+## Windows Helper Scripts
+
+Windows setup, packaging, installer, service, and verification scripts are kept out of the repo root under:
+
+```text
+scripts/windows/
+```
+
+Run them from the repository root so their existing relative paths continue to resolve correctly:
+
+```powershell
+.\scripts\windows\verify.ps1
+.\scripts\windows\dev-server.ps1
+.\scripts\windows\START_HERE.ps1
+```
+
 ## Validation
 
 Useful checks before pushing:
@@ -129,6 +145,7 @@ FlowSpace/
   documents/                Archived implementation notes and guides
   docs/                     Planning docs and screenshots
   infrastructure/           Service configs for hosted development
+  scripts/windows/          Windows helper scripts and packaging tools
   service-wrappers/         Windows service helper scripts
 ```
 
