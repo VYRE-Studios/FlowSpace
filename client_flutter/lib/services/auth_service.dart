@@ -5,6 +5,7 @@ import 'package:crypto/crypto.dart';
 import 'api_client.dart';
 import 'database_service.dart';
 import 'secure_storage_service.dart';
+import 'server_config_service.dart';
 import 'user_service.dart';
 
 class AuthService {
@@ -66,6 +67,15 @@ class AuthService {
     required String password,
     required String workspaceName,
   }) async {
+    if (!await ServerConfigService.instance.isServerMode()) {
+      return _createLocalAccount(
+        name: name,
+        email: email,
+        password: password,
+        workspaceName: workspaceName,
+      );
+    }
+
     try {
       print('FlowSpace: Starting registration for $email via API...');
 
@@ -150,6 +160,14 @@ class AuthService {
     required String password,
     bool rememberMe = false,
   }) async {
+    if (!await ServerConfigService.instance.isServerMode()) {
+      return _loginLocal(
+        email: email,
+        password: password,
+        rememberMe: rememberMe,
+      );
+    }
+
     try {
       print('FlowSpace: Starting login with remember me for $email...');
 
@@ -256,6 +274,14 @@ class AuthService {
     required String password,
     bool rememberMe = false,
   }) async {
+    if (!await ServerConfigService.instance.isServerMode()) {
+      return _loginLocal(
+        email: email,
+        password: password,
+        rememberMe: rememberMe,
+      );
+    }
+
     try {
       print('FlowSpace: Starting login for $email via API...');
 

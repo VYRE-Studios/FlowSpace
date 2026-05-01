@@ -10,12 +10,13 @@ import '../../services/workspace_service.dart';
 import '../../services/vault_storage_service.dart';
 import '../../services/secure_storage_service.dart';
 import '../../services/database_credential_service.dart';
+import '../../services/server_config_service.dart';
 import 'database_settings_view.dart';
 import '../onboarding/welcome_screen.dart';
 
 class SettingsView extends StatefulWidget {
   final String? workspaceName;
-  
+
   const SettingsView({super.key, this.workspaceName});
 
   @override
@@ -29,7 +30,7 @@ class _SettingsViewState extends State<SettingsView> {
   List<Map<String, dynamic>> _members = [];
   List<Map<String, dynamic>> _channels = [];
   String _tier = 'free';
-  
+
   // Settings state
   bool _notificationsEnabled = true;
   bool _emailNotifications = true;
@@ -62,6 +63,10 @@ class _SettingsViewState extends State<SettingsView> {
   int _cacheSize = 500; // MB
   bool _enableHardwareAcceleration = true;
   String? _customStoragePath;
+  FlowSpaceConnectionMode _connectionMode = FlowSpaceConnectionMode.local;
+  String _serverUrl = '';
+  String? _serverStatus;
+  bool _testingServer = false;
 
   @override
   void initState() {
@@ -78,39 +83,54 @@ class _SettingsViewState extends State<SettingsView> {
         setState(() => _loading = false);
         return;
       }
-      
+
       // Load custom storage path
       final customPath = await VaultStorageService.getCustomStoragePath();
-      
+      final connectionMode = await ServerConfigService.instance
+          .getConnectionMode();
+      final serverUrl = await ServerConfigService.instance.getServerBaseUrl();
+
       // Load workspace data if workspace name is provided
       Map<String, dynamic>? workspace;
-      if (widget.workspaceName != null && 
-          widget.workspaceName!.isNotEmpty && 
+      if (widget.workspaceName != null &&
+          widget.workspaceName!.isNotEmpty &&
           widget.workspaceName != 'FlowSpace') {
         try {
-          workspace = await WorkspaceService.selectWorkspaceByName(widget.workspaceName!);
+          workspace = await WorkspaceService.selectWorkspaceByName(
+            widget.workspaceName!,
+          );
         } catch (e) {
           print('Settings: Error finding workspace: $e');
         }
       }
-      
+
       if (workspace == null) {
-        final workspaces = await DatabaseService.getUserWorkspaces(user['id'] as String);
+        final workspaces = await DatabaseService.getUserWorkspaces(
+          user['id'] as String,
+        );
         if (workspaces.isNotEmpty) {
           workspace = workspaces.reduce((a, b) {
-            final aUpdated = DateTime.tryParse(a['updated_at'] as String? ?? '') ?? DateTime(1970);
-            final bUpdated = DateTime.tryParse(b['updated_at'] as String? ?? '') ?? DateTime(1970);
+            final aUpdated =
+                DateTime.tryParse(a['updated_at'] as String? ?? '') ??
+                DateTime(1970);
+            final bUpdated =
+                DateTime.tryParse(b['updated_at'] as String? ?? '') ??
+                DateTime(1970);
             return bUpdated.isAfter(aUpdated) ? b : a;
           });
         }
       }
-      
+
       if (workspace != null) {
         final workspaceId = workspace['id'] as String?;
         if (workspaceId != null) {
-          final members = await DatabaseService.getWorkspaceMembers(workspaceId);
-          final channels = await DatabaseService.getWorkspaceChannels(workspaceId);
-          
+          final members = await DatabaseService.getWorkspaceMembers(
+            workspaceId,
+          );
+          final channels = await DatabaseService.getWorkspaceChannels(
+            workspaceId,
+          );
+
           if (!mounted) return;
           setState(() {
             _workspace = workspace;
@@ -120,12 +140,14 @@ class _SettingsViewState extends State<SettingsView> {
           });
         }
       }
-      
+
       // TODO: Load settings from database/preferences
       if (!mounted) return;
       setState(() {
         _user = user;
         _customStoragePath = customPath;
+        _connectionMode = connectionMode;
+        _serverUrl = serverUrl;
         _loading = false;
       });
     } catch (e) {
@@ -154,6 +176,68 @@ class _SettingsViewState extends State<SettingsView> {
             ),
           ),
           const SizedBox(height: 32),
+          _buildSection(
+            title: 'Connection',
+            icon: Icons.hub,
+            children: [
+              _buildDropdownTile(
+                title: 'Mode',
+                subtitle: _connectionMode == FlowSpaceConnectionMode.local
+                    ? 'Use this device only with the local offline workspace'
+                    : 'Connect this app to a self-hosted FlowSpace server',
+                value: _connectionMode,
+                items: const [
+                  FlowSpaceConnectionMode.local,
+                  FlowSpaceConnectionMode.server,
+                ],
+                labels: const ['Local', 'Self-hosted Server'],
+                onChanged: _setConnectionMode,
+              ),
+              _buildSettingTile(
+                title: 'Server URL',
+                subtitle: _serverUrl.isEmpty
+                    ? 'No server URL configured'
+                    : _serverUrl,
+                icon: Icons.dns,
+                onTap: _showServerUrlDialog,
+              ),
+              ListTile(
+                leading: Icon(
+                  _connectionMode == FlowSpaceConnectionMode.server
+                      ? Icons.cloud_queue
+                      : Icons.computer,
+                  color: const Color(0xFF0066FF),
+                ),
+                title: const Text(
+                  'Connection Status',
+                  style: TextStyle(color: Colors.white),
+                ),
+                subtitle: Text(
+                  _serverStatus ??
+                      (_connectionMode == FlowSpaceConnectionMode.server
+                          ? 'Server mode is selected. Test the configured URL before signing in.'
+                          : 'Local mode is active. Server calls are skipped for login/register.'),
+                  style: const TextStyle(color: Colors.white54),
+                ),
+                trailing: FilledButton.icon(
+                  onPressed: _testingServer ? null : _testServerConnection,
+                  icon: _testingServer
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.network_check),
+                  label: const Text('Test'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF0066FF),
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 32),
           if (_workspace != null) ...[
             _buildTierBanner(),
             const SizedBox(height: 32),
@@ -172,7 +256,7 @@ class _SettingsViewState extends State<SettingsView> {
               const SizedBox(height: 16),
               _buildSettingTile(
                 title: 'Edit Nickname',
-                subtitle: _user?['nickname'] != null 
+                subtitle: _user?['nickname'] != null
                     ? 'Current: @${_user!['nickname']}'
                     : 'Set a nickname for @mentions',
                 icon: Icons.alternate_email,
@@ -216,20 +300,23 @@ class _SettingsViewState extends State<SettingsView> {
                 title: 'Enable Notifications',
                 subtitle: 'Receive notifications for messages and mentions',
                 value: _notificationsEnabled,
-                onChanged: (value) => setState(() => _notificationsEnabled = value),
+                onChanged: (value) =>
+                    setState(() => _notificationsEnabled = value),
               ),
               if (_notificationsEnabled) ...[
                 _buildSwitchTile(
                   title: 'Email Notifications',
                   subtitle: 'Receive notifications via email',
                   value: _emailNotifications,
-                  onChanged: (value) => setState(() => _emailNotifications = value),
+                  onChanged: (value) =>
+                      setState(() => _emailNotifications = value),
                 ),
                 _buildSwitchTile(
                   title: 'Desktop Notifications',
                   subtitle: 'Show desktop notifications',
                   value: _desktopNotifications,
-                  onChanged: (value) => setState(() => _desktopNotifications = value),
+                  onChanged: (value) =>
+                      setState(() => _desktopNotifications = value),
                 ),
                 _buildSwitchTile(
                   title: 'Sound',
@@ -276,7 +363,8 @@ class _SettingsViewState extends State<SettingsView> {
                 title: 'Allow Direct Messages',
                 subtitle: 'Allow others to send you direct messages',
                 value: _allowDirectMessages,
-                onChanged: (value) => setState(() => _allowDirectMessages = value),
+                onChanged: (value) =>
+                    setState(() => _allowDirectMessages = value),
               ),
               _buildSettingTile(
                 title: 'Blocked Users',
@@ -387,13 +475,15 @@ class _SettingsViewState extends State<SettingsView> {
                 title: 'Enable Screen Sharing',
                 subtitle: 'Allow screen sharing in calls',
                 value: _enableScreenSharing,
-                onChanged: (value) => setState(() => _enableScreenSharing = value),
+                onChanged: (value) =>
+                    setState(() => _enableScreenSharing = value),
               ),
               _buildSwitchTile(
                 title: 'Enable File Sharing',
                 subtitle: 'Allow file sharing in workspaces',
                 value: _enableFileSharing,
-                onChanged: (value) => setState(() => _enableFileSharing = value),
+                onChanged: (value) =>
+                    setState(() => _enableFileSharing = value),
               ),
             ],
           ),
@@ -422,7 +512,8 @@ class _SettingsViewState extends State<SettingsView> {
                   min: 1,
                   max: 30,
                   divisions: 29,
-                  onChanged: (value) => setState(() => _autoSaveInterval = value.toInt()),
+                  onChanged: (value) =>
+                      setState(() => _autoSaveInterval = value.toInt()),
                 ),
             ],
           ),
@@ -435,7 +526,8 @@ class _SettingsViewState extends State<SettingsView> {
                 title: 'Enable Keyboard Shortcuts',
                 subtitle: 'Use keyboard shortcuts for faster navigation',
                 value: _enableKeyboardShortcuts,
-                onChanged: (value) => setState(() => _enableKeyboardShortcuts = value),
+                onChanged: (value) =>
+                    setState(() => _enableKeyboardShortcuts = value),
               ),
               if (_enableKeyboardShortcuts)
                 _buildSettingTile(
@@ -469,13 +561,15 @@ class _SettingsViewState extends State<SettingsView> {
                 title: 'Enable Crash Reporting',
                 subtitle: 'Automatically report crashes',
                 value: _enableCrashReporting,
-                onChanged: (value) => setState(() => _enableCrashReporting = value),
+                onChanged: (value) =>
+                    setState(() => _enableCrashReporting = value),
               ),
               _buildSwitchTile(
                 title: 'Hardware Acceleration',
                 subtitle: 'Use GPU acceleration for better performance',
                 value: _enableHardwareAcceleration,
-                onChanged: (value) => setState(() => _enableHardwareAcceleration = value),
+                onChanged: (value) =>
+                    setState(() => _enableHardwareAcceleration = value),
               ),
               _buildSliderTile(
                 title: 'Cache Size',
@@ -484,7 +578,8 @@ class _SettingsViewState extends State<SettingsView> {
                 min: 100,
                 max: 2000,
                 divisions: 19,
-                onChanged: (value) => setState(() => _cacheSize = value.toInt()),
+                onChanged: (value) =>
+                    setState(() => _cacheSize = value.toInt()),
               ),
               _buildSettingTile(
                 title: 'Clear Cache',
@@ -640,11 +735,105 @@ class _SettingsViewState extends State<SettingsView> {
     );
   }
 
+  Future<void> _setConnectionMode(FlowSpaceConnectionMode? mode) async {
+    if (mode == null) return;
+
+    final saved = await ServerConfigService.instance.setConnectionMode(mode);
+    if (!mounted) return;
+
+    setState(() {
+      _connectionMode = mode;
+      _serverStatus = saved
+          ? mode == FlowSpaceConnectionMode.local
+                ? 'Local mode saved. Login and registration will use this device.'
+                : 'Server mode saved. Test the server URL before signing in.'
+          : 'Could not save connection mode.';
+    });
+  }
+
+  Future<void> _showServerUrlDialog() async {
+    final controller = TextEditingController(text: _serverUrl);
+
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E1E),
+        title: const Text(
+          'Self-hosted Server URL',
+          style: TextStyle(color: Colors.white),
+        ),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          style: const TextStyle(color: Colors.white),
+          decoration: const InputDecoration(
+            hintText: 'https://flowspace.yourcompany.com',
+            hintStyle: TextStyle(color: Colors.white38),
+            helperText: 'Use the base URL, without /api/v1',
+            helperStyle: TextStyle(color: Colors.white54),
+            enabledBorder: UnderlineInputBorder(
+              borderSide: BorderSide(color: Colors.white24),
+            ),
+            focusedBorder: UnderlineInputBorder(
+              borderSide: BorderSide(color: Color(0xFF0066FF)),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+
+    controller.dispose();
+    if (result == null || result.isEmpty) return;
+
+    final saved = await ServerConfigService.instance.setServerBaseUrl(result);
+    if (saved) {
+      final url = await ServerConfigService.instance.getServerBaseUrl();
+      if (!mounted) return;
+      setState(() {
+        _serverUrl = url;
+        _serverStatus = 'Server URL saved. Run Test to verify it.';
+      });
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _serverStatus = 'Server URL must start with http:// or https://.';
+    });
+  }
+
+  Future<void> _testServerConnection() async {
+    setState(() {
+      _testingServer = true;
+      _serverStatus = 'Testing $_serverUrl...';
+    });
+
+    final result = await ServerConfigService.instance.testConnection();
+    if (!mounted) return;
+
+    setState(() {
+      _testingServer = false;
+      _serverStatus = result.ok
+          ? '${result.message} ${result.url}'
+          : '${result.message} ${result.url}';
+    });
+  }
+
   Widget _buildAccountInfo() {
     final email = _user?['email'] as String? ?? 'user@example.com';
     final name = _user?['name'] as String? ?? email.split('@').first;
     final nickname = _user?['nickname'] as String?;
-    
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -674,16 +863,17 @@ class _SettingsViewState extends State<SettingsView> {
                 const SizedBox(height: 4),
                 Text(
                   email,
-                  style: const TextStyle(
-                    color: Colors.white54,
-                    fontSize: 14,
-                  ),
+                  style: const TextStyle(color: Colors.white54, fontSize: 14),
                 ),
                 if (nickname != null) ...[
                   const SizedBox(height: 4),
                   Row(
                     children: [
-                      const Icon(Icons.alternate_email, size: 12, color: Color(0xFF0066FF)),
+                      const Icon(
+                        Icons.alternate_email,
+                        size: 12,
+                        color: Color(0xFF0066FF),
+                      ),
                       const SizedBox(width: 4),
                       Text(
                         nickname,
@@ -751,13 +941,10 @@ class _SettingsViewState extends State<SettingsView> {
         style: const TextStyle(color: Colors.white),
         underline: Container(),
         items: items.map((item) {
-          final label = labels != null 
+          final label = labels != null
               ? labels[items.indexOf(item)]
               : item.toString();
-          return DropdownMenuItem(
-            value: item,
-            child: Text(label),
-          );
+          return DropdownMenuItem(value: item, child: Text(label));
         }).toList(),
         onChanged: onChanged,
       ),
@@ -808,7 +995,10 @@ class _SettingsViewState extends State<SettingsView> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF1E1E1E),
-        title: const Text('Change Password', style: TextStyle(color: Colors.white)),
+        title: const Text(
+          'Change Password',
+          style: TextStyle(color: Colors.white),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -853,10 +1043,14 @@ class _SettingsViewState extends State<SettingsView> {
               // TODO: Implement password change
               Navigator.pop(context);
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Password change feature coming soon!')),
+                const SnackBar(
+                  content: Text('Password change feature coming soon!'),
+                ),
               );
             },
-            style: FilledButton.styleFrom(backgroundColor: const Color(0xFF0066FF)),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF0066FF),
+            ),
             child: const Text('Change Password'),
           ),
         ],
@@ -897,24 +1091,24 @@ class _SettingsViewState extends State<SettingsView> {
       // Get user ID before clearing
       final user = await AuthService.getCurrentUser();
       final userId = user?['id'] as String?;
-      
+
       // Clear local database user data first
       if (userId != null) {
         final db = await DatabaseService.database;
         await db.delete('users', where: 'id = ?', whereArgs: [userId]);
       }
-      
+
       // Call AuthService logout to clear tokens and secure storage
       await AuthService.logout();
-      
+
       // Navigate to welcome screen
       if (!mounted) return;
-      
+
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (context) => const WelcomeScreen()),
         (route) => false, // Remove all previous routes
       );
-      
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Signed out successfully'),
@@ -937,7 +1131,10 @@ class _SettingsViewState extends State<SettingsView> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF1E1E1E),
-        title: const Text('Set Push to Talk Key', style: TextStyle(color: Colors.white)),
+        title: const Text(
+          'Set Push to Talk Key',
+          style: TextStyle(color: Colors.white),
+        ),
         content: const Text(
           'Press the key you want to use for push to talk',
           style: TextStyle(color: Colors.white70),
@@ -952,7 +1149,9 @@ class _SettingsViewState extends State<SettingsView> {
               // TODO: Implement key binding
               Navigator.pop(context);
             },
-            style: FilledButton.styleFrom(backgroundColor: const Color(0xFF0066FF)),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF0066FF),
+            ),
             child: const Text('Set Key'),
           ),
         ],
@@ -965,7 +1164,10 @@ class _SettingsViewState extends State<SettingsView> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF1E1E1E),
-        title: const Text('Keyboard Shortcuts', style: TextStyle(color: Colors.white)),
+        title: const Text(
+          'Keyboard Shortcuts',
+          style: TextStyle(color: Colors.white),
+        ),
         content: SizedBox(
           width: 400,
           child: SingleChildScrollView(
@@ -1009,7 +1211,10 @@ class _SettingsViewState extends State<SettingsView> {
               color: Colors.white.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(4),
             ),
-            child: Text(shortcut, style: const TextStyle(color: Colors.white, fontSize: 12)),
+            child: Text(
+              shortcut,
+              style: const TextStyle(color: Colors.white, fontSize: 12),
+            ),
           ),
         ],
       ),
@@ -1035,9 +1240,9 @@ class _SettingsViewState extends State<SettingsView> {
             onPressed: () {
               // TODO: Implement cache clearing
               Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Cache cleared!')),
-              );
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(const SnackBar(content: Text('Cache cleared!')));
             },
             style: FilledButton.styleFrom(backgroundColor: Colors.orange),
             child: const Text('Clear Cache'),
@@ -1127,7 +1332,10 @@ class _SettingsViewState extends State<SettingsView> {
               const SizedBox(height: 16),
               const Text(
                 'What\'s New:',
-                style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               const SizedBox(height: 8),
               Text(
@@ -1180,7 +1388,9 @@ class _SettingsViewState extends State<SettingsView> {
                 );
               }
             },
-            style: FilledButton.styleFrom(backgroundColor: const Color(0xFF0066FF)),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF0066FF),
+            ),
             child: const Text('Download Update'),
           ),
         ],
@@ -1195,7 +1405,13 @@ class _SettingsViewState extends State<SettingsView> {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(label, style: const TextStyle(color: Colors.white54)),
-          Text(value, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          Text(
+            value,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
         ],
       ),
     );
@@ -1204,7 +1420,7 @@ class _SettingsViewState extends State<SettingsView> {
   // Workspace settings widgets
   Widget _buildTierBanner() {
     final isFree = _tier == 'free';
-    
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
       child: BackdropFilter(
@@ -1254,7 +1470,10 @@ class _SettingsViewState extends State<SettingsView> {
                   style: FilledButton.styleFrom(
                     backgroundColor: const Color(0xFF0066FF),
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 16,
+                    ),
                   ),
                 ),
             ],
@@ -1266,14 +1485,17 @@ class _SettingsViewState extends State<SettingsView> {
 
   Widget _buildWorkspaceInfo() {
     if (_workspace == null) return const SizedBox.shrink();
-    
+
     return _buildSection(
       title: 'Workspace Settings',
       icon: Icons.workspace_premium,
       children: [
         _buildInfoRow('Name', _workspace!['name'] ?? 'Unnamed'),
         _buildInfoRow('Slug', _workspace!['slug'] ?? ''),
-        _buildInfoRow('Created', _formatWorkspaceDate(_workspace!['created_at'] as String?)),
+        _buildInfoRow(
+          'Created',
+          _formatWorkspaceDate(_workspace!['created_at'] as String?),
+        ),
         const SizedBox(height: 16),
         OutlinedButton.icon(
           onPressed: _showRenameDialog,
@@ -1290,7 +1512,7 @@ class _SettingsViewState extends State<SettingsView> {
 
   Widget _buildMembersList() {
     if (_workspace == null) return const SizedBox.shrink();
-    
+
     return _buildSection(
       title: 'Team Members (${_members.length}/5)',
       icon: Icons.people,
@@ -1358,7 +1580,7 @@ class _SettingsViewState extends State<SettingsView> {
 
   Widget _buildChannelsList() {
     if (_workspace == null) return const SizedBox.shrink();
-    
+
     return _buildSection(
       title: 'Channels (${_channels.length}/2)',
       icon: Icons.tag,
@@ -1378,7 +1600,9 @@ class _SettingsViewState extends State<SettingsView> {
         }),
         const SizedBox(height: 16),
         OutlinedButton.icon(
-          onPressed: _tier == 'free' && _channels.length >= 2 ? null : null, // TODO: implement add channel
+          onPressed: _tier == 'free' && _channels.length >= 2
+              ? null
+              : null, // TODO: implement add channel
           icon: const Icon(Icons.add),
           label: const Text('Add Channel'),
           style: OutlinedButton.styleFrom(
@@ -1412,7 +1636,11 @@ class _SettingsViewState extends State<SettingsView> {
           children: [
             const Text(
               'FlowSpace Pro - \$9/user/month',
-              style: TextStyle(color: Color(0xFF0066FF), fontSize: 18, fontWeight: FontWeight.w600),
+              style: TextStyle(
+                color: Color(0xFF0066FF),
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+              ),
             ),
             const SizedBox(height: 16),
             ...[
@@ -1424,21 +1652,27 @@ class _SettingsViewState extends State<SettingsView> {
               'Screen recording',
               'API access',
               'Cloud sync backup (optional)',
-            ].map((feature) => Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Row(
-                children: [
-                  const Icon(Icons.check_circle, color: Color(0xFF0066FF), size: 20),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      feature,
-                      style: const TextStyle(color: Colors.white70),
+            ].map(
+              (feature) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.check_circle,
+                      color: Color(0xFF0066FF),
+                      size: 20,
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        feature,
+                        style: const TextStyle(color: Colors.white70),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            )),
+            ),
           ],
         ),
         actions: [
@@ -1466,8 +1700,10 @@ class _SettingsViewState extends State<SettingsView> {
 
   void _showRenameDialog() {
     if (_workspace == null) return;
-    final controller = TextEditingController(text: _workspace!['name'] as String?);
-    
+    final controller = TextEditingController(
+      text: _workspace!['name'] as String?,
+    );
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -1573,7 +1809,7 @@ class _SettingsViewState extends State<SettingsView> {
       // For Windows, we'll use a text input dialog since file_picker doesn't support folder selection on all platforms
       // In a production app, you'd use a native folder picker
       final controller = TextEditingController(text: _customStoragePath ?? '');
-      
+
       final result = await showDialog<String>(
         context: context,
         builder: (context) => AlertDialog(
@@ -1596,7 +1832,9 @@ class _SettingsViewState extends State<SettingsView> {
                 style: const TextStyle(color: Colors.white),
                 decoration: InputDecoration(
                   hintText: 'C:\\Users\\YourName\\Documents\\FlowSpace',
-                  hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)),
+                  hintStyle: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.3),
+                  ),
                   border: const OutlineInputBorder(
                     borderSide: BorderSide(color: Colors.white54),
                   ),
@@ -1611,7 +1849,10 @@ class _SettingsViewState extends State<SettingsView> {
               const SizedBox(height: 8),
               Text(
                 'Leave empty to use default App Data location',
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11),
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.5),
+                  fontSize: 11,
+                ),
               ),
             ],
           ),
@@ -1636,7 +1877,7 @@ class _SettingsViewState extends State<SettingsView> {
 
       if (result != null) {
         String? pathToSet = result.isEmpty ? null : result;
-        
+
         // Validate path if provided
         if (pathToSet != null) {
           final dir = Directory(pathToSet);
@@ -1692,17 +1933,17 @@ class _SettingsViewState extends State<SettingsView> {
 
         // Save the path
         await VaultStorageService.setCustomStoragePath(pathToSet);
-        
+
         if (mounted) {
           setState(() {
             _customStoragePath = pathToSet;
           });
-          
+
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                pathToSet == null 
-                    ? 'Reset to default storage location' 
+                pathToSet == null
+                    ? 'Reset to default storage location'
                     : 'Storage location updated. Restart app for changes to take effect.',
               ),
               backgroundColor: Colors.green,
@@ -1729,10 +1970,12 @@ class _SettingsViewState extends State<SettingsView> {
       setState(() {
         _customStoragePath = null;
       });
-      
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Reset to default storage location. Restart app for changes to take effect.'),
+          content: Text(
+            'Reset to default storage location. Restart app for changes to take effect.',
+          ),
           backgroundColor: Colors.green,
           duration: Duration(seconds: 3),
         ),
@@ -1742,10 +1985,10 @@ class _SettingsViewState extends State<SettingsView> {
 
   void _showInviteDialog() {
     if (_workspace == null) return;
-    
+
     final emailController = TextEditingController();
     final workspaceId = _workspace!['id'] as String;
-    
+
     showDialog(
       context: context,
       builder: (context) => _InviteDialog(
@@ -1763,12 +2006,15 @@ class _SettingsViewState extends State<SettingsView> {
   void _showEditNicknameDialog() {
     final currentNickname = _user?['nickname'] as String? ?? '';
     final controller = TextEditingController(text: currentNickname);
-    
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF1E1E1E),
-        title: const Text('Edit Nickname', style: TextStyle(color: Colors.white)),
+        title: const Text(
+          'Edit Nickname',
+          style: TextStyle(color: Colors.white),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1785,7 +2031,9 @@ class _SettingsViewState extends State<SettingsView> {
                 labelText: 'Nickname',
                 labelStyle: const TextStyle(color: Colors.white70),
                 hintText: 'e.g., john, jdoe',
-                hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)),
+                hintStyle: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.3),
+                ),
                 prefixText: '@',
                 prefixStyle: const TextStyle(color: Color(0xFF0066FF)),
               ),
@@ -1800,35 +2048,38 @@ class _SettingsViewState extends State<SettingsView> {
           FilledButton(
             onPressed: () async {
               final newNickname = controller.text.trim();
-              
+
               // Validate nickname (alphanumeric and underscores only)
-              if (newNickname.isNotEmpty && !RegExp(r'^[a-zA-Z0-9_]+$').hasMatch(newNickname)) {
+              if (newNickname.isNotEmpty &&
+                  !RegExp(r'^[a-zA-Z0-9_]+$').hasMatch(newNickname)) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Nickname can only contain letters, numbers, and underscores'),
+                    content: Text(
+                      'Nickname can only contain letters, numbers, and underscores',
+                    ),
                     backgroundColor: Colors.orange,
                   ),
                 );
                 return;
               }
-              
+
               try {
                 // Update nickname on backend
                 await UserService.updateProfile(
                   nickname: newNickname.isEmpty ? null : newNickname,
                 );
-                
+
                 // Update local state
                 if (_user != null) {
                   _user!['nickname'] = newNickname.isEmpty ? null : newNickname;
                   setState(() {});
                 }
-                
+
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text(
-                      newNickname.isEmpty 
+                      newNickname.isEmpty
                           ? 'Nickname removed'
                           : 'Nickname updated to @$newNickname',
                     ),
@@ -1844,7 +2095,9 @@ class _SettingsViewState extends State<SettingsView> {
                 );
               }
             },
-            style: FilledButton.styleFrom(backgroundColor: const Color(0xFF0066FF)),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF0066FF),
+            ),
             child: const Text('Save'),
           ),
         ],
@@ -1915,12 +2168,19 @@ class _InviteDialogState extends State<_InviteDialog> {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.info_outline, color: Colors.orange, size: 20),
+                  const Icon(
+                    Icons.info_outline,
+                    color: Colors.orange,
+                    size: 20,
+                  ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       'Free tier: Max 5 members (${widget.members.length}/5)',
-                      style: const TextStyle(color: Colors.orange, fontSize: 12),
+                      style: const TextStyle(
+                        color: Colors.orange,
+                        fontSize: 12,
+                      ),
                     ),
                   ),
                 ],
@@ -1934,102 +2194,122 @@ class _InviteDialogState extends State<_InviteDialog> {
           child: const Text('Cancel'),
         ),
         FilledButton(
-          onPressed: _isInviting ? null : () async {
-            final email = widget.emailController.text.trim();
-            if (email.isEmpty) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Please enter an email address')),
-              );
-              return;
-            }
-            
-            if (!email.contains('@') || !email.contains('.')) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Please enter a valid email address')),
-              );
-              return;
-            }
-            
-            setState(() => _isInviting = true);
-            
-            try {
-              final user = await DatabaseService.getUserByEmail(email);
-              
-              if (user == null) {
-                final userId = '${DateTime.now().millisecondsSinceEpoch}_user';
-                final now = DateTime.now().toIso8601String();
-                
-                await DatabaseService.insertUser({
-                  'id': userId,
-                  'name': email.split('@')[0],
-                  'email': email,
-                  'password_hash': null,
-                  'avatar_url': null,
-                  'status': 'offline',
-                  'created_at': now,
-                  'updated_at': now,
-                });
-                
-                await DatabaseService.addWorkspaceMember({
-                  'workspace_id': widget.workspaceId,
-                  'user_id': userId,
-                  'role': 'member',
-                  'joined_at': now,
-                });
-                
-                if (!mounted) return;
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('$email has been added to the workspace'),
-                    backgroundColor: Colors.green,
-                  ),
-                );
-                
-                widget.onMemberAdded();
-              } else {
-                final existingMembers = await DatabaseService.getWorkspaceMembers(widget.workspaceId);
-                final isAlreadyMember = existingMembers.any((m) => m['email'] == email);
-                
-                if (isAlreadyMember) {
-                  if (!mounted) return;
-                  setState(() => _isInviting = false);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('User is already a member of this workspace')),
-                  );
-                  return;
-                }
-                
-                final now = DateTime.now().toIso8601String();
-                await DatabaseService.addWorkspaceMember({
-                  'workspace_id': widget.workspaceId,
-                  'user_id': user['id'] as String,
-                  'role': 'member',
-                  'joined_at': now,
-                });
-                
-                if (!mounted) return;
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('${user['name']} has been added to the workspace'),
-                    backgroundColor: Colors.green,
-                  ),
-                );
-                
-                widget.onMemberAdded();
-              }
-            } catch (e) {
-              if (!mounted) return;
-              setState(() => _isInviting = false);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Error adding member: $e'),
-                  backgroundColor: Colors.red,
-                ),
-              );
-            }
-          },
+          onPressed: _isInviting
+              ? null
+              : () async {
+                  final email = widget.emailController.text.trim();
+                  if (email.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Please enter an email address'),
+                      ),
+                    );
+                    return;
+                  }
+
+                  if (!email.contains('@') || !email.contains('.')) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Please enter a valid email address'),
+                      ),
+                    );
+                    return;
+                  }
+
+                  setState(() => _isInviting = true);
+
+                  try {
+                    final user = await DatabaseService.getUserByEmail(email);
+
+                    if (user == null) {
+                      final userId =
+                          '${DateTime.now().millisecondsSinceEpoch}_user';
+                      final now = DateTime.now().toIso8601String();
+
+                      await DatabaseService.insertUser({
+                        'id': userId,
+                        'name': email.split('@')[0],
+                        'email': email,
+                        'password_hash': null,
+                        'avatar_url': null,
+                        'status': 'offline',
+                        'created_at': now,
+                        'updated_at': now,
+                      });
+
+                      await DatabaseService.addWorkspaceMember({
+                        'workspace_id': widget.workspaceId,
+                        'user_id': userId,
+                        'role': 'member',
+                        'joined_at': now,
+                      });
+
+                      if (!mounted) return;
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            '$email has been added to the workspace',
+                          ),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+
+                      widget.onMemberAdded();
+                    } else {
+                      final existingMembers =
+                          await DatabaseService.getWorkspaceMembers(
+                            widget.workspaceId,
+                          );
+                      final isAlreadyMember = existingMembers.any(
+                        (m) => m['email'] == email,
+                      );
+
+                      if (isAlreadyMember) {
+                        if (!mounted) return;
+                        setState(() => _isInviting = false);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'User is already a member of this workspace',
+                            ),
+                          ),
+                        );
+                        return;
+                      }
+
+                      final now = DateTime.now().toIso8601String();
+                      await DatabaseService.addWorkspaceMember({
+                        'workspace_id': widget.workspaceId,
+                        'user_id': user['id'] as String,
+                        'role': 'member',
+                        'joined_at': now,
+                      });
+
+                      if (!mounted) return;
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            '${user['name']} has been added to the workspace',
+                          ),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+
+                      widget.onMemberAdded();
+                    }
+                  } catch (e) {
+                    if (!mounted) return;
+                    setState(() => _isInviting = false);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Error adding member: $e'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                },
           style: FilledButton.styleFrom(
             backgroundColor: const Color(0xFF0066FF),
           ),
@@ -2048,4 +2328,3 @@ class _InviteDialogState extends State<_InviteDialog> {
     );
   }
 }
-

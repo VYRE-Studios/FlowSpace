@@ -36,7 +36,7 @@ Future<void> main() async {
 
   // Initialize error logging first
   await ErrorLoggingService.instance.init();
-  ErrorLoggingService.instance.info('FlowSpace v2.0.0 starting...');
+  ErrorLoggingService.instance.info('FlowSpace v2.1.0 starting...');
 
   // Initialize SQLite database and default local account for offline builds.
   await DatabaseService.database;

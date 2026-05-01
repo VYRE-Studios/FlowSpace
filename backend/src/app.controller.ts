@@ -9,4 +9,13 @@ export class AppController {
   getRoot(): string {
     return this.appService.getRoot();
   }
+
+  @Get('health')
+  getHealth() {
+    return {
+      ok: true,
+      service: 'flowspace-backend',
+      timestamp: new Date().toISOString(),
+    };
+  }
 }
