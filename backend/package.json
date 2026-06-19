@@ -48,7 +48,7 @@
         "ioredis": "^5.8.2",
         "jsonwebtoken": "^9.0.2",
         "livekit-server-sdk": "^2.14.1",
-        "nodemailer": "^7.0.11",
+        "nodemailer": "^9.0.1",
         "pg": "^8.16.3",
         "prisma": "^6.19.0",
         "redis": "^5.9.0",
